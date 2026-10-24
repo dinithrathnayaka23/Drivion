@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 
 import pytest
 
@@ -9,11 +10,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 @pytest.fixture(autouse=True)
 def isolated_env(tmp_path, monkeypatch):
-    """Keep every test away from the real %LOCALAPPDATA%\\Drivion and real secrets."""
-    monkeypatch.setenv("DRIVION_DATA_DIR", str(tmp_path / "data"))
+    """Keep every test away from the real %LOCALAPPDATA%\\Drivion, real secrets
+    and a real running Drivion (unique single-instance name per test)."""
     for name in list(os.environ):
-        if name.startswith("DRIVION_") and name != "DRIVION_DATA_DIR":
+        if name.startswith("DRIVION_"):
             monkeypatch.delenv(name)
+    monkeypatch.setenv("DRIVION_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DRIVION_INSTANCE_ID", f"DrivionTest-{uuid.uuid4().hex}")
     yield
     root = logging.getLogger()
     for handler in list(root.handlers):

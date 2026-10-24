@@ -70,6 +70,12 @@ not in the repository.
 
 ## 3. Application states (implemented in M2)
 
+Code: `core/state.py` (rules), `core/controller.py` (event → transition decisions).
+Background threads never change state directly. They call `controller.post_event()`,
+which queues the event onto the Qt main thread, so events are handled one at a time,
+in order. Each verification attempt gets an id, and results carrying an old id are
+discarded, so a late "face OK" from a timed-out attempt can't unlock a newer one.
+
 | State | Meaning | Allowed next states |
 |---|---|---|
 | STANDBY | UI closed, only the wake-word listener runs | VERIFYING, SHUTTING_DOWN, ERROR |
@@ -93,7 +99,7 @@ not in the repository.
 | # | Milestone | Main deliverable |
 |---|---|---|
 | **1** | **Scaffolding** ✅ | Config validation, secrets, logging, entry point, minimal window, tests |
-| 2 | Core lifecycle | State machine with transition rules, single-instance lock, worker-thread infrastructure, tray icon with Exit, simulated events |
+| 2 | Core lifecycle ✅ | State machine with transition rules, single-instance lock, worker-thread infrastructure, tray icon with Exit, simulated events |
 | 3 | Dashboard UI | Animated indicator, live state, mic/camera indicators, history panel (driven by fake events) |
 | 4 | Wake word | Microphone capture, Porcupine custom keyword, standby loop, mocked-audio tests |
 | 5 | Speech | faster-whisper command capture (silence/timeout handling), Windows TTS |
