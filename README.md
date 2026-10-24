@@ -3,10 +3,11 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 2 (core lifecycle).** The app has a state machine, a system tray
-> icon, a single-instance lock, and infrastructure for background services. There is no
-> microphone, camera, AI or system control yet; a developer menu (`--simulate`) fakes
-> those events. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full plan.
+> **Status: Milestone 3 (dashboard UI).** Drivion has a state machine, a system tray app,
+> a single-instance lock, and an animated dashboard with device indicators, a
+> conversation view and command history. There is no microphone, camera, AI or system
+> control yet; a developer menu (`--simulate`) fakes those events. See
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full plan.
 
 ## Requirements
 
@@ -67,6 +68,9 @@ blue = standby, amber = verifying, cyan = active, red = error.
   `face.verification_timeout_s` seconds Drivion **fails closed** and returns to standby.
 - With `--simulate`, use *Simulate → Wake word detected*, then *Face verified*, to reach
   **ACTIVE** and open the dashboard.
+- While the dashboard is open, *Simulate → Voice command* adds fake commands to the
+  conversation and history (nothing is executed). *Toggle microphone/camera indicator*
+  previews the privacy indicators.
 - **Go to sleep**, or closing the window with X, returns to standby. The process keeps
   running in the tray.
 - **Exit Drivion** (tray menu or window button) stops the background process. Ctrl+C in

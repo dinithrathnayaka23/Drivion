@@ -25,6 +25,9 @@ class TrayIcon(QSystemTrayIcon):
     simulate_face_verified = Signal()
     simulate_face_rejected = Signal()
     simulate_failure = Signal()
+    simulate_command = Signal()
+    simulate_toggle_microphone = Signal()
+    simulate_toggle_camera = Signal()
 
     def __init__(self, simulate: bool = False) -> None:
         super().__init__()
@@ -45,6 +48,9 @@ class TrayIcon(QSystemTrayIcon):
                 ("verified", "Face verified", self.simulate_face_verified),
                 ("rejected", "Face rejected", self.simulate_face_rejected),
                 ("failure", "Subsystem failure", self.simulate_failure),
+                ("command", "Voice command", self.simulate_command),
+                ("microphone", "Toggle microphone indicator", self.simulate_toggle_microphone),
+                ("camera", "Toggle camera indicator", self.simulate_toggle_camera),
             ]:
                 action = sim.addAction(label)
                 action.triggered.connect(signal)
@@ -76,6 +82,9 @@ class TrayIcon(QSystemTrayIcon):
             "verified": {AppState.VERIFYING},
             "rejected": {AppState.VERIFYING},
             "failure": {AppState.STANDBY, AppState.VERIFYING, AppState.ACTIVE},
+            "command": {AppState.ACTIVE},
+            "microphone": set(AppState) - {AppState.SHUTTING_DOWN},
+            "camera": set(AppState) - {AppState.SHUTTING_DOWN},
         }
         for key, action in self.simulation_actions.items():
             action.setEnabled(state in enabled_in[key])

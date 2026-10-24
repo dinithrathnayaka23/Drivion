@@ -1,21 +1,29 @@
 import pytest
 
+from drivion.core.activity import ActivityFeed, Device, DeviceState, Outcome
 from drivion.core.controller import AssistantController
 from drivion.core.state import AppState
+from drivion.ui import shell as shell_module
 from drivion.ui.main_window import MainWindow
-from drivion.ui.shell import Shell
+from drivion.ui.shell import SIMULATED_COMMANDS, Shell
 from drivion.ui.tray import TrayIcon
 
 S = AppState
 
 
 @pytest.fixture
-def parts(qtbot):
+def feed(qapp):
+    return ActivityFeed()
+
+
+@pytest.fixture
+def parts(qtbot, feed, monkeypatch):
+    monkeypatch.setattr(shell_module, "SIMULATED_REPLY_DELAY_MS", 10)
     controller = AssistantController(verification_timeout_s=5.0)
     window = MainWindow()
     qtbot.addWidget(window)
     tray = TrayIcon(simulate=True)
-    shell = Shell(controller, window, tray)
+    shell = Shell(controller, feed, window, tray)
     shell.show_initial()
     controller.start()
     yield controller, window, tray, shell
@@ -96,11 +104,11 @@ def test_no_simulation_menu_by_default(qtbot):
     assert tray.simulation_actions == {}
 
 
-def test_without_tray_window_stays_visible_and_x_exits(qtbot):
+def test_without_tray_window_stays_visible_and_x_exits(qtbot, feed):
     controller = AssistantController(verification_timeout_s=5.0)
     window = MainWindow()
     qtbot.addWidget(window)
-    shell = Shell(controller, window, tray=None)
+    shell = Shell(controller, feed, window, tray=None)
     shell.show_initial()
     assert window.isVisible()
     with qtbot.waitSignal(controller.shutdown_finished, timeout=1000):
@@ -112,3 +120,55 @@ def test_second_launch_activation_starts_verification(qtbot, parts):
     controller, *_, shell = parts
     shell.request_activation()
     wait_state(qtbot, controller, S.VERIFYING)
+
+
+def test_feed_drives_dashboard(qtbot, parts, feed):
+    _, window, _, _ = parts
+    feed.set_device(Device.MICROPHONE, DeviceState.ACTIVE)
+    assert window.mic_chip.state is DeviceState.ACTIVE
+    record_id = feed.add_command("open vs code")
+    assert window.history.count == 1
+    feed.complete_command(record_id, "VS Code opened.", Outcome.SUCCESS)
+    assert window.conversation.reply_label.text() == "VS Code opened."
+
+
+def test_existing_feed_state_is_shown_on_startup(qtbot, feed):
+    feed.set_device(Device.CAMERA, DeviceState.ACTIVE)
+    feed.add_command("earlier command")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    Shell(AssistantController(verification_timeout_s=5.0), feed, window, tray=None)
+    assert window.camera_chip.state is DeviceState.ACTIVE
+    assert window.history.count == 1
+
+
+def test_clear_button_clears_feed_and_window(qtbot, parts, feed):
+    _, window, _, _ = parts
+    feed.add_command("open chrome")
+    window.history.clear_button.click()
+    assert feed.history == []
+    assert window.history.count == 0
+
+
+def test_simulated_commands_only_when_active(qtbot, parts, feed):
+    controller, window, tray, shell = parts
+    shell.simulate_command()
+    assert feed.history == []  # ignored in STANDBY
+    assert not tray.simulation_actions["command"].isEnabled()
+
+    activate_via_simulator(qtbot, controller, tray)
+    assert tray.simulation_actions["command"].isEnabled()
+    tray.simulate_command.emit()
+    command, reply, outcome = SIMULATED_COMMANDS[0]
+    assert window.history.count == 1
+    qtbot.waitUntil(lambda: feed.history[0].outcome is outcome, timeout=1000)
+    assert window.conversation.reply_label.text() == reply
+
+
+def test_simulated_device_toggles(qtbot, parts, feed):
+    _, window, tray, _ = parts
+    tray.simulate_toggle_camera.emit()
+    assert feed.device_state(Device.CAMERA) is DeviceState.ACTIVE
+    assert window.camera_chip.state is DeviceState.ACTIVE
+    tray.simulate_toggle_camera.emit()
+    assert window.camera_chip.state is DeviceState.OFF

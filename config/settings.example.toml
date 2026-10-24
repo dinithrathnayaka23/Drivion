@@ -8,6 +8,10 @@
 [general]
 log_level = "INFO"          # DEBUG, INFO, WARNING, ERROR
 
+[ui]
+animations = true           # false = static indicator (reduced motion, lower CPU)
+history_limit = 50          # 10..500 commands kept in memory for this session
+
 [wake_word]
 sensitivity = 0.5           # 0.0 (fewer false wakes) .. 1.0 (fewer missed wakes)
 

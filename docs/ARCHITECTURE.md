@@ -94,13 +94,26 @@ discarded, so a late "face OK" from a timed-out attempt can't unlock a newer one
 | "Lock Windows" (**Windows lock**) | Lock screen appears | Keeps running | Session locked; you need your Windows password/PIN |
 | "Put my computer to sleep" (**Windows sleep**) | The PC suspends after you confirm | Frozen along with everything else | Low-power state; the mic is off, so the wake word cannot wake the PC |
 
+### Dashboard data flow (M3)
+
+`core/activity.py` holds an `ActivityFeed`, the single source of truth for what the
+dashboard shows: microphone and camera state, and command history. Subsystems report to
+it from any thread, the feed relays updates to the main thread, and the window only
+displays them. Only the code that actually opens a device may report it as ACTIVE, so
+the indicators can't claim a device is off while it is in use. History is kept in
+memory only, has a size limit (`ui.history_limit`), and is never written to disk.
+
+The animated orb (`ui/widgets/orb.py`) runs its 30 fps timer only while visible, so a
+hidden dashboard in standby costs no animation CPU. Setting `ui.animations = false`
+draws a static indicator instead.
+
 ## 4. Milestones
 
 | # | Milestone | Main deliverable |
 |---|---|---|
 | **1** | **Scaffolding** ✅ | Config validation, secrets, logging, entry point, minimal window, tests |
 | 2 | Core lifecycle ✅ | State machine with transition rules, single-instance lock, worker-thread infrastructure, tray icon with Exit, simulated events |
-| 3 | Dashboard UI | Animated indicator, live state, mic/camera indicators, history panel (driven by fake events) |
+| 3 | Dashboard UI ✅ | Animated indicator, live state, mic/camera indicators, history panel (driven by fake events) |
 | 4 | Wake word | Microphone capture, Porcupine custom keyword, standby loop, mocked-audio tests |
 | 5 | Speech | faster-whisper command capture (silence/timeout handling), Windows TTS |
 | 6 | Intents (offline) | Pydantic intent schemas, rule-based parser with aliases, help/repeat/cancel |

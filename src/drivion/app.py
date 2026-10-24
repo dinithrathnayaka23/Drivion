@@ -112,6 +112,7 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QSystemTrayIcon
 
+    from drivion.core.activity import ActivityFeed
     from drivion.core.controller import AssistantController
     from drivion.core.events import Event, EventType
     from drivion.core.single_instance import ActivationServer
@@ -120,13 +121,15 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
     from drivion.ui.tray import TrayIcon
 
     controller = AssistantController(config.face.verification_timeout_s)
+    feed = ActivityFeed(history_limit=config.ui.history_limit)
 
     tray = None
     if QSystemTrayIcon.isSystemTrayAvailable():
         tray = TrayIcon(simulate=simulate)
     else:
         log.warning("No system tray available; the window will stay visible instead")
-    shell = Shell(controller, MainWindow(), tray)
+    window = MainWindow(history_limit=config.ui.history_limit, animated=config.ui.animations)
+    shell = Shell(controller, feed, window, tray)
 
     activation = ActivationServer(name)
     activation.activation_requested.connect(shell.request_activation)
