@@ -30,10 +30,6 @@ class GeneralSettings(_Section):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
 
-class UISettings(_Section):
-    start_minimized: bool = False
-
-
 class WakeWordSettings(_Section):
     sensitivity: float = Field(default=0.5, ge=0.0, le=1.0)
 
@@ -42,6 +38,8 @@ class FaceSettings(_Section):
     similarity_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     store_raw_images: bool = False
     liveness_mode: Literal["none", "blink", "challenge"] = "challenge"
+    # How long to wait for a verification result before failing closed.
+    verification_timeout_s: float = Field(default=10.0, ge=1.0, le=60.0)
 
 
 class VoiceSettings(_Section):
@@ -58,7 +56,6 @@ class LLMSettings(_Section):
 
 class AppConfig(_Section):
     general: GeneralSettings = GeneralSettings()
-    ui: UISettings = UISettings()
     wake_word: WakeWordSettings = WakeWordSettings()
     face: FaceSettings = FaceSettings()
     voice: VoiceSettings = VoiceSettings()

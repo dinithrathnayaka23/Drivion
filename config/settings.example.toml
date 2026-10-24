@@ -8,9 +8,6 @@
 [general]
 log_level = "INFO"          # DEBUG, INFO, WARNING, ERROR
 
-[ui]
-start_minimized = false     # start hidden in the system tray (tray arrives in a later milestone)
-
 [wake_word]
 sensitivity = 0.5           # 0.0 (fewer false wakes) .. 1.0 (fewer missed wakes)
 
@@ -18,6 +15,7 @@ sensitivity = 0.5           # 0.0 (fewer false wakes) .. 1.0 (fewer missed wakes
 similarity_threshold = 0.6  # 0.0..1.0, calibrated during the face milestone
 store_raw_images = false    # keep enrollment photos? false = templates only
 liveness_mode = "challenge" # "none", "blink" or "challenge"
+verification_timeout_s = 10.0  # 1..60; no result in time = access denied
 
 [voice]
 stt_model = "base.en"       # faster-whisper model name
