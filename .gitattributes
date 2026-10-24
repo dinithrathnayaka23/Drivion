@@ -1,0 +1,10 @@
+# Normalize line endings in the repository (LF), regardless of OS settings.
+* text=auto
+
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+*.png binary
+*.ico binary
+*.onnx binary
+*.ppn binary
