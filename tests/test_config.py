@@ -43,6 +43,9 @@ def test_partial_override_keeps_other_defaults(tmp_path):
         ("[face]\nliveness_mode = \"maybe\"\n", "face.liveness_mode"),
         ("[general]\nlog_level = \"LOUD\"\n", "general.log_level"),
         ("[voice]\ncommand_timeout_s = 0\n", "voice.command_timeout_s"),
+        ("[ui]\nhistory_limit = 5\n", "ui.history_limit"),
+        ("[ui]\nanimations = \"sometimes\"\n", "ui.animations"),
+        ("[ui]\nstart_minimized = true\n", "ui.start_minimized"),  # removed in M2
         ("[wake_word]\nsensitivty = 0.5\n", "wake_word.sensitivty"),  # typo -> unknown key
         ("[unknown_section]\nx = 1\n", "unknown_section"),
     ],

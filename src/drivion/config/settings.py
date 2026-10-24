@@ -30,6 +30,11 @@ class GeneralSettings(_Section):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
 
+class UISettings(_Section):
+    animations: bool = True  # False = static indicator (reduced motion, lower CPU)
+    history_limit: int = Field(default=50, ge=10, le=500)
+
+
 class WakeWordSettings(_Section):
     sensitivity: float = Field(default=0.5, ge=0.0, le=1.0)
 
@@ -56,6 +61,7 @@ class LLMSettings(_Section):
 
 class AppConfig(_Section):
     general: GeneralSettings = GeneralSettings()
+    ui: UISettings = UISettings()
     wake_word: WakeWordSettings = WakeWordSettings()
     face: FaceSettings = FaceSettings()
     voice: VoiceSettings = VoiceSettings()
