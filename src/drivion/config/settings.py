@@ -1,0 +1,90 @@
+"""Validated, non-secret application configuration.
+
+Settings come from three layers, later layers winning:
+1. Defaults defined on the models below.
+2. An optional TOML file (``config/settings.toml`` by default).
+3. Nothing else - secrets are handled separately in ``secrets.py``.
+
+Every model forbids unknown keys, so a typo such as ``sensitivty = 0.7``
+fails loudly at startup instead of being silently ignored.
+"""
+
+from __future__ import annotations
+
+import tomllib
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+
+class ConfigError(Exception):
+    """Raised when the configuration file is missing required structure or is invalid."""
+
+
+class _Section(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class GeneralSettings(_Section):
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+
+class UISettings(_Section):
+    start_minimized: bool = False
+
+
+class WakeWordSettings(_Section):
+    sensitivity: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class FaceSettings(_Section):
+    similarity_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    store_raw_images: bool = False
+    liveness_mode: Literal["none", "blink", "challenge"] = "challenge"
+
+
+class VoiceSettings(_Section):
+    stt_model: str = Field(default="base.en", min_length=1)
+    tts_engine: Literal["windows", "piper"] = "windows"
+    command_timeout_s: float = Field(default=8.0, gt=0.0, le=60.0)
+
+
+class LLMSettings(_Section):
+    provider: Literal["none", "openai", "anthropic"] = "none"
+    model: str = ""
+    request_timeout_s: float = Field(default=20.0, gt=0.0, le=120.0)
+
+
+class AppConfig(_Section):
+    general: GeneralSettings = GeneralSettings()
+    ui: UISettings = UISettings()
+    wake_word: WakeWordSettings = WakeWordSettings()
+    face: FaceSettings = FaceSettings()
+    voice: VoiceSettings = VoiceSettings()
+    llm: LLMSettings = LLMSettings()
+
+
+def load_config(path: Path | None) -> AppConfig:
+    """Load and validate configuration.
+
+    A missing file is not an error (defaults are used); a malformed or
+    invalid file is, because silently falling back could hide a mistake in
+    a security-relevant setting such as the face similarity threshold.
+    """
+    if path is None or not path.exists():
+        return AppConfig()
+
+    try:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: not valid TOML ({exc})") from exc
+
+    try:
+        return AppConfig.model_validate(data)
+    except ValidationError as exc:
+        problems = "; ".join(
+            f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.errors()
+        )
+        raise ConfigError(f"{path}: {problems}") from exc

@@ -1,0 +1,30 @@
+# Drivion configuration (non-secret settings only).
+#
+# Copy this file to config/settings.toml (git-ignored) and edit it.
+# Every key is optional: anything you leave out uses the built-in default.
+# Unknown keys or out-of-range values are rejected at startup with a clear error.
+# API keys do NOT go here - put them in .env (see .env.example).
+
+[general]
+log_level = "INFO"          # DEBUG, INFO, WARNING, ERROR
+
+[ui]
+start_minimized = false     # start hidden in the system tray (tray arrives in a later milestone)
+
+[wake_word]
+sensitivity = 0.5           # 0.0 (fewer false wakes) .. 1.0 (fewer missed wakes)
+
+[face]
+similarity_threshold = 0.6  # 0.0..1.0, calibrated during the face milestone
+store_raw_images = false    # keep enrollment photos? false = templates only
+liveness_mode = "challenge" # "none", "blink" or "challenge"
+
+[voice]
+stt_model = "base.en"       # faster-whisper model name
+tts_engine = "windows"      # "windows" or "piper"
+command_timeout_s = 8.0     # seconds of silence before a command is abandoned
+
+[llm]
+provider = "none"           # "none", "openai" or "anthropic"
+model = ""
+request_timeout_s = 20.0
