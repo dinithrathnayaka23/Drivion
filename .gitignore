@@ -1,0 +1,36 @@
+# --- Secrets & personal data (NEVER commit) ---
+.env
+.env.*
+!.env.example
+config/settings.toml
+*.face
+*.npy
+face_templates/
+enrollment/
+data/
+logs/
+*.log
+
+# --- Models (large downloads, fetched per machine) ---
+models/
+*.ppn
+*.onnx
+*.pt
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
