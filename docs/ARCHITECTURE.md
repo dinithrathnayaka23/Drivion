@@ -1,0 +1,147 @@
+# Drivion Architecture & Plan
+
+## 1. Architecture overview
+
+Drivion is a **modular monolith**: one Python process and one repository, split into
+packages with one responsibility each. Packages talk through typed interfaces
+(`typing.Protocol`) so that real hardware/AI implementations can be swapped for
+fakes in tests.
+
+```
+               ┌──────────────────────── Drivion process ────────────────────────┐
+               │                                                                 │
+ microphone ──►│ audio (capture + wake word) ──► core (state machine, lifecycle) │
+               │                                   │        ▲                    │
+   webcam ────►│ vision (face verify, liveness) ◄──┘        │ Qt signals         │
+               │                                   │        │                    │
+               │ speech (STT/TTS) ──► intents (rules → LLM fallback)             │
+               │                          │                                      │
+               │                          ▼                                      │
+               │              safety (policy, confirmation)                      │
+               │                          │                                      │
+               │                          ▼                                      │
+               │              actions (registry → Windows handlers)              │
+               │                                                                 │
+               │ ui (dashboard, tray)   config (settings, secrets, paths, logs)  │
+               └─────────────────────────────────────────────────────────────────┘
+```
+
+Key rules:
+
+- **The UI thread only draws.** Audio, camera and model inference run in worker
+  threads and send results to the UI with Qt signals.
+- **The core state machine is the only thing that decides what happens next.**
+  Workers report events ("wake word heard", "face verified"); the core decides
+  whether the event is valid in the current state.
+- **The LLM never executes anything.** It can only return a choice from the action
+  registry plus parameters. Those parameters are validated against a pydantic schema
+  and then checked by the safety policy before anything runs.
+- **Fail closed.** If the camera, the model or the verification step is unavailable,
+  protected actions are denied. They are never allowed by default.
+
+## 2. Directory tree (target)
+
+```
+Drivion/
+├── pyproject.toml            dependencies, entry point, pytest config
+├── .env.example              secret placeholders (real .env is git-ignored)
+├── config/
+│   └── settings.example.toml copy to settings.toml (git-ignored)
+├── docs/ARCHITECTURE.md
+├── src/drivion/
+│   ├── app.py, __main__.py   entry point                              [M1]
+│   ├── logging_setup.py      console + rotating file, secret redaction [M1]
+│   ├── config/               settings.py, secrets.py, paths.py         [M1]
+│   ├── core/                 state machine, lifecycle, single instance [M2]
+│   ├── ui/                   main window, tray, dashboard, settings    [M1→M3]
+│   ├── audio/                microphone capture, wake word             [M4]
+│   ├── speech/               speech-to-text, text-to-speech            [M5]
+│   ├── intents/              schemas, rule parser, LLM parser          [M6, M8]
+│   ├── actions/              registry + Windows handlers               [M7]
+│   ├── safety/               risk policy, authorization, confirmation  [M7]
+│   ├── llm/                  provider interface + cloud provider       [M8]
+│   └── vision/               camera, detector, embedder, templates,
+│                             liveness                                  [M9, M10]
+└── tests/
+```
+
+Personal data (logs, and face templates later) is stored in `%LOCALAPPDATA%\Drivion`,
+not in the repository.
+
+## 3. Application states (implemented in M2)
+
+| State | Meaning | Allowed next states |
+|---|---|---|
+| STANDBY | UI closed, only the wake-word listener runs | VERIFYING, SHUTTING_DOWN, ERROR |
+| VERIFYING | Camera on, face + liveness check running | ACTIVE, STANDBY (fail/timeout), ERROR, SHUTTING_DOWN |
+| ACTIVE | Dashboard open, commands accepted | SLEEPING, ERROR, SHUTTING_DOWN |
+| SLEEPING | Tearing down camera/STT/UI, then back to standby | STANDBY, ERROR, SHUTTING_DOWN |
+| ERROR | A subsystem failed; show the reason, allow recovery | STANDBY, SHUTTING_DOWN |
+| SHUTTING_DOWN | Releasing every resource; the process exits | (terminal) |
+
+### Standby, exit, lock and sleep are four different things
+
+| Phrase / action | What happens | Drivion process | Windows |
+|---|---|---|---|
+| "Drivion, go to sleep" (**app standby**) | Dashboard closes; camera and STT stop | Keeps running; only the wake word listens | Unaffected |
+| Tray → Exit Drivion (**app exit**) | All services stop | Ends; "Wake up" no longer works | Unaffected |
+| "Lock Windows" (**Windows lock**) | Lock screen appears | Keeps running | Session locked; you need your Windows password/PIN |
+| "Put my computer to sleep" (**Windows sleep**) | The PC suspends after you confirm | Frozen along with everything else | Low-power state; the mic is off, so the wake word cannot wake the PC |
+
+## 4. Milestones
+
+| # | Milestone | Main deliverable |
+|---|---|---|
+| **1** | **Scaffolding** ✅ | Config validation, secrets, logging, entry point, minimal window, tests |
+| 2 | Core lifecycle | State machine with transition rules, single-instance lock, worker-thread infrastructure, tray icon with Exit, simulated events |
+| 3 | Dashboard UI | Animated indicator, live state, mic/camera indicators, history panel (driven by fake events) |
+| 4 | Wake word | Microphone capture, Porcupine custom keyword, standby loop, mocked-audio tests |
+| 5 | Speech | faster-whisper command capture (silence/timeout handling), Windows TTS |
+| 6 | Intents (offline) | Pydantic intent schemas, rule-based parser with aliases, help/repeat/cancel |
+| 7 | Actions + safety | Action registry, risk levels, confirmation flow, allowlisted app launch, volume, brightness, lock, screenshot, window control, power actions (confirmed and mocked in tests) |
+| 8 | LLM | Provider interface, one cloud provider, structured intent fallback, general Q&A, network-error handling |
+| 9 | Face verification | Consent-based enrollment, YuNet detection + SFace embeddings, encrypted local templates, threshold calibration |
+| 10 | Liveness | Challenge-response (blink/turn head), honest limits documented |
+| 11 | Integration | End-to-end flow, settings dialog, recovery procedures |
+| 12 | Packaging | PyInstaller build, startup at login (Task Scheduler), final README |
+
+## 5. Dependency and compatibility decisions
+
+| Need | Choice | Why |
+|---|---|---|
+| Python | **3.11** in a `.venv` | Has wheels for faster-whisper/ctranslate2, onnxruntime, pvporcupine and PySide6. Your default `python` is 3.14, which is too new for some of these, so always use the venv. |
+| UI | PySide6 6.9.x | The official Qt binding and LGPL-licensed; `QThread` plus signals covers the threading model |
+| Config / schemas | pydantic v2 + pydantic-settings | One validation library for config, secrets, intent parameters and action schemas |
+| Config format | TOML (stdlib `tomllib`) | Readable and supports comments; no extra dependency |
+| Wake word | Picovoice Porcupine (to verify in M4) | Low CPU use and custom phrases. It needs a free Picovoice account and AccessKey, and a custom `.ppn` keyword trained on the Picovoice Console for Windows. Fallback: openWakeWord. |
+| STT | faster-whisper (CPU int8 first) | Runs offline and is accurate; CUDA can come later |
+| TTS | Windows SAPI first, Piper optional | SAPI needs no model download |
+| Face | OpenCV `FaceDetectorYN` (YuNet) + `FaceRecognizerSF` (SFace) | Both are in core OpenCV ≥4.5.4 as small ONNX models, so we avoid dlib/face_recognition build problems |
+| Template protection | Windows DPAPI via `ctypes` | Encrypts templates to your Windows account with no extra package |
+| Audio | sounddevice | PortAudio wheels for Windows |
+| Volume | pycaw | Core Audio API |
+| Brightness | WMI (`WmiMonitorBrightnessMethods`) through a fixed PowerShell command | Works on laptop panels; external monitors are often unsupported |
+| Tests | pytest + pytest-qt | Qt widgets can be tested offscreen |
+| Packaging | PyInstaller (to evaluate against pyside6-deploy in M12) | |
+
+## 6. Risks and hardware assumptions
+
+- **Hardware assumed:** MSI GF63 laptop running Windows 11, built-in 720p RGB webcam
+  (no IR camera), built-in array microphone, NVIDIA GPU (unused until a later
+  CUDA option).
+- **Spoofing:** An RGB webcam with face matching **cannot** reliably stop a photo or
+  video replay. Challenge-response liveness raises the effort an attacker needs, but
+  it is not Windows Hello. Drivion therefore gates only its own features. It never
+  replaces or bypasses Windows login.
+- **Wake-word licensing:** Porcupine terms, AccessKey validation (it may need internet
+  when the engine starts) and custom-keyword limits must be verified in M4.
+- **False wakes or missed wakes:** Sensitivity is configurable and is tuned manually
+  in your room.
+- **Brightness:** Unsupported on many external monitors, so Drivion will report this
+  instead of pretending it worked.
+- **Sleep vs hibernate:** `SetSuspendState` may hibernate if hibernation is enabled.
+  Modern Standby laptops behave differently. Both get verified manually in M7.
+- **Resource use:** An always-on mic stream plus Whisper on the CPU uses battery.
+  Standby runs only the wake-word engine.
+- **Privacy:** The camera runs only in VERIFYING, the mic stream runs only for the
+  wake word in standby, and the UI shows indicators whenever either is in use.
