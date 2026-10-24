@@ -6,15 +6,7 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
 from drivion.core.state import AppState
-
-STATE_COLORS: dict[AppState, str] = {
-    AppState.STANDBY: "#3f6a9e",
-    AppState.VERIFYING: "#f2b544",
-    AppState.ACTIVE: "#4fd8ff",
-    AppState.SLEEPING: "#3f6a9e",
-    AppState.ERROR: "#ff5a6e",
-    AppState.SHUTTING_DOWN: "#55657d",
-}
+from drivion.ui.theme import BACKGROUND, STATE_COLORS
 
 
 def state_icon(state: AppState, size: int = 64) -> QIcon:
@@ -26,7 +18,7 @@ def state_icon(state: AppState, size: int = 64) -> QIcon:
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     margin = size * 0.08
     outer = QRectF(margin, margin, size - 2 * margin, size - 2 * margin)
-    painter.setBrush(QColor("#0a1428"))
+    painter.setBrush(QColor(BACKGROUND))
     painter.setPen(QPen(color, size * 0.09))
     painter.drawEllipse(outer)
     core = size * 0.22
