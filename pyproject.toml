@@ -22,6 +22,10 @@ dependencies = [
     # Pinned exactly: 0.6.0 is the last release and we rely on its Model API.
     "openwakeword==0.6.0",
     "onnxruntime>=1.17,<2",
+    # Milestone 5: speech recognition and spoken replies.
+    # Pinned exactly: Drivion uses its bundled Silero VAD wrapper (faster_whisper.vad).
+    "faster-whisper==1.2.1",
+    "comtypes>=1.4,<2",
 ]
 
 [project.optional-dependencies]
