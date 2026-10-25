@@ -15,7 +15,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 
 class ConfigError(Exception):
@@ -36,7 +36,27 @@ class UISettings(_Section):
 
 
 class WakeWordSettings(_Section):
+    enabled: bool = True
+    engine: Literal["openwakeword"] = "openwakeword"
+    # A built-in model name ("hey_jarvis") or the path to a custom .onnx model.
+    model: str = Field(default="hey_jarvis", min_length=1)
+    # Phrase shown in the dashboard; defaults to the built-in model's phrase.
+    phrase: str | None = None
     sensitivity: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Ignore repeat detections for this long (one utterance scores on many frames).
+    cooldown_s: float = Field(default=2.0, ge=0.5, le=10.0)
+    # Microphone index or (part of) its name; omit to use the Windows default.
+    input_device: int | str | None = None
+
+    @field_validator("model")
+    @classmethod
+    def _builtin_or_onnx(cls, value: str) -> str:
+        from drivion.audio.models import BUILTIN_WAKE_WORDS
+
+        if value not in BUILTIN_WAKE_WORDS and not value.lower().endswith(".onnx"):
+            known = ", ".join(sorted(BUILTIN_WAKE_WORDS))
+            raise ValueError(f"must be a built-in model ({known}) or a path to a .onnx file")
+        return value
 
 
 class FaceSettings(_Section):

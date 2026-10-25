@@ -13,7 +13,13 @@ animations = true           # false = static indicator (reduced motion, lower CP
 history_limit = 50          # 10..500 commands kept in memory for this session
 
 [wake_word]
+enabled = true
+engine = "openwakeword"
+model = "hey_jarvis"        # built-in model, or a path to your own .onnx (see docs/WAKE_WORD.md)
+# phrase = "Wake up, Drivion" # text shown in the dashboard for a custom model
 sensitivity = 0.5           # 0.0 (fewer false wakes) .. 1.0 (fewer missed wakes)
+cooldown_s = 2.0            # ignore repeat detections for this many seconds
+# input_device = "Microphone Array"  # index or part of the name; see `drivion --list-audio-devices`
 
 [face]
 similarity_threshold = 0.6  # 0.0..1.0, calibrated during the face milestone

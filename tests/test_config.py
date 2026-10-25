@@ -65,3 +65,16 @@ def test_config_is_immutable():
     config = AppConfig()
     with pytest.raises(Exception):
         config.face.similarity_threshold = 0.0  # type: ignore[misc]
+
+
+def test_wake_word_model_must_be_builtin_or_onnx(tmp_path):
+    with pytest.raises(ConfigError, match="wake_word.model"):
+        load_config(write(tmp_path, '[wake_word]\nmodel = "alexa"\n'))
+    config = load_config(write(tmp_path, '[wake_word]\nmodel = "C:/models/wake_up_drivion.onnx"\n'))
+    assert config.wake_word.model.endswith(".onnx")
+
+
+@pytest.mark.parametrize("value, expected", [("1", 1), ('"Microphone Array"', "Microphone Array")])
+def test_input_device_accepts_index_or_name(tmp_path, value, expected):
+    config = load_config(write(tmp_path, f"[wake_word]\ninput_device = {value}\n"))
+    assert config.wake_word.input_device == expected
