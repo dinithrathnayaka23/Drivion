@@ -51,7 +51,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--download-models", action="store_true",
-        help="download and verify the wake-word model files, then exit",
+        help="download and verify the wake-word and speech models, then exit",
+    )
+    parser.add_argument(
+        "--list-voices", action="store_true",
+        help="list installed Windows voices (for voice.tts_voice), then exit",
     )
     parser.add_argument(
         "--list-audio-devices", action="store_true",
@@ -86,15 +90,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_OK
 
     if args.download_models:
-        return _download_models()
+        return _download_models(config)
     if args.list_audio_devices:
         return _list_audio_devices()
+    if args.list_voices:
+        return _list_voices()
 
     return _run_ui(config, simulate=args.simulate)
 
 
-def _download_models() -> int:
+def _download_models(config: AppConfig) -> int:
     from drivion.audio.models import ModelDownloadError, download_models
+    from drivion.speech.stt import download_whisper_model
 
     target = paths.models_dir()
     print(f"Downloading wake-word models to {target} ...")
@@ -103,7 +110,30 @@ def _download_models() -> int:
     except ModelDownloadError as exc:
         print(f"Download failed: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    print(f"Done: {len(written)} downloaded, all files verified.")
+    print(f"Wake word: {len(written)} downloaded, all files verified.")
+
+    name = config.voice.stt_model
+    print(f"Downloading speech model {name} (pinned revision) ...")
+    try:
+        download_whisper_model(target, name)
+    except Exception as exc:  # network, disk and Hugging Face Hub errors
+        print(f"Download failed: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Speech model {name}: ready.")
+    return EXIT_OK
+
+
+def _list_voices() -> int:
+    from drivion.speech.tts import installed_voices
+
+    try:
+        voices = installed_voices()
+    except Exception as exc:
+        print(f"Windows speech is unavailable: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    for name in voices:
+        print(f"  {name}")
+    print("\nSet voice.tts_voice to part of a name, e.g. \"Zira\".")
     return EXIT_OK
 
 
@@ -156,26 +186,39 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
     from drivion.core.activity import ActivityFeed
     from drivion.core.controller import AssistantController
     from drivion.core.events import Event, EventType
+    from drivion.core.services import ServiceManager
     from drivion.core.single_instance import ActivationServer
+    from drivion.core.state import AppState
     from drivion.ui.main_window import MainWindow
     from drivion.ui.shell import Shell
     from drivion.ui.tray import TrayIcon
 
-    from drivion.core.services import ServiceManager
-
+    session_services = ServiceManager()
     standby_services = ServiceManager()
+    active_services = ServiceManager()
     controller = AssistantController(
-        config.face.verification_timeout_s, standby_services=standby_services
+        config.face.verification_timeout_s,
+        services=session_services,
+        standby_services=standby_services,
+        active_services=active_services,
     )
     feed = ActivityFeed(history_limit=config.ui.history_limit)
 
     wake_phrase, listening, wake_word_problem = _register_wake_word(
         config, controller, feed, standby_services
     )
+    speaker = _build_speaker(config, session_services)
+    voice_input, speech_problem = _register_speech(config, controller, feed, speaker, active_services)
+
+    def greet_on_activation(transition) -> None:
+        if transition.new is AppState.ACTIVE and config.voice.greeting:
+            speaker.say(config.voice.greeting)
+
+    controller.state_changed.connect(greet_on_activation)
 
     tray = None
     if QSystemTrayIcon.isSystemTrayAvailable():
-        tray = TrayIcon(simulate=simulate, simulate_microphone=not listening)
+        tray = TrayIcon(simulate=simulate, simulate_microphone=not (listening or voice_input))
     else:
         log.warning("No system tray available; the window will stay visible instead")
     window = MainWindow(
@@ -207,6 +250,8 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
     controller.start()
     if wake_word_problem:
         controller.notification.emit("Wake word unavailable", wake_word_problem)
+    if speech_problem:
+        controller.notification.emit("Voice commands unavailable", speech_problem)
     log.info("Drivion running (state %s, simulation %s)", controller.state,
              "on" if simulate else "off")
 
@@ -263,6 +308,71 @@ def _register_wake_word(
     standby_services.register(service)
     log.info("Wake word ready: %r (%s)", phrase, model_path.name)
     return phrase, True, None
+
+
+TIMEOUT_REPLY = "I didn't hear a command, so I'm going back to standby."
+
+
+def _build_speaker(config: AppConfig, session_services):
+    """Spoken replies; a silent stand-in when disabled (replies still show on screen)."""
+    from drivion.speech.tts import SilentSpeaker, WindowsSpeaker
+
+    voice = config.voice
+    if voice.tts_engine == "none":
+        return SilentSpeaker()
+    speaker = WindowsSpeaker(voice.tts_voice, voice.tts_rate, voice.tts_volume)
+    session_services.register(speaker)
+    return speaker
+
+
+def _register_speech(config: AppConfig, controller, feed, speaker, active_services) -> tuple[bool, str | None]:
+    """Build the command listener for ACTIVE. Returns (registered?, problem to report)."""
+    from drivion.audio.source import MicrophoneSource
+    from drivion.core.activity import Device
+    from drivion.core.commands import CommandProcessor, echo_responder
+    from drivion.core.events import Event, EventType
+    from drivion.speech.listener import CommandListenerService
+    from drivion.speech.recorder import RecorderSettings
+    from drivion.speech.stt import SpeechUnavailable, WhisperTranscriber, check_whisper_model
+    from drivion.speech.vad import VAD_FRAME_SAMPLES, SileroVad
+
+    voice = config.voice
+    if not voice.enabled:
+        log.info("Voice commands disabled in config")
+        return False, None
+    try:
+        model_dir = check_whisper_model(paths.models_dir(), voice.stt_model)
+    except SpeechUnavailable as exc:
+        log.warning("Voice commands unavailable: %s", exc)
+        return False, str(exc)
+
+    processor = CommandProcessor(feed, speaker, echo_responder)
+
+    def on_timeout() -> None:
+        speaker.say(TIMEOUT_REPLY)
+        controller.post_event(Event(EventType.COMMAND_TIMEOUT, "command listener"))
+
+    active_services.register(CommandListenerService(
+        source_factory=lambda: MicrophoneSource(config.wake_word.input_device, VAD_FRAME_SAMPLES),
+        vad_factory=SileroVad,
+        # Loaded in the listener thread on first activation, then kept.
+        transcriber_factory=lambda: WhisperTranscriber(model_dir, voice.stt_threads),
+        speaker=speaker,
+        recorder_settings=RecorderSettings(
+            speech_threshold=voice.speech_threshold,
+            end_silence_s=voice.end_silence_s,
+            max_utterance_s=voice.max_command_s,
+        ),
+        command_timeout_s=voice.command_timeout_s,
+        on_command=processor.handle,
+        on_unclear=processor.unclear,
+        on_timeout=on_timeout,
+        on_microphone=lambda state: feed.set_device(Device.MICROPHONE, state),
+        on_status=feed.set_voice_status,
+        on_crash=controller.service_crashed,
+    ))
+    log.info("Voice commands ready (model %s)", voice.stt_model)
+    return True, None
 
 
 if __name__ == "__main__":

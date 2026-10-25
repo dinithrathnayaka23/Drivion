@@ -138,3 +138,34 @@ def test_download_failure_exits_with_error(monkeypatch, capsys, tmp_path):
     code = main(["--config", str(tmp_path / "none.toml"), "--download-models"])
     assert code == app_module.EXIT_ERROR
     assert "offline" in capsys.readouterr().err
+
+
+def _register_speech(qapp, config):
+    from drivion.speech.tts import SilentSpeaker
+
+    active = ServiceManager()
+    controller = AssistantController(5.0, active_services=active)
+    result = app_module._register_speech(config, controller, ActivityFeed(), SilentSpeaker(), active)
+    return result, active
+
+
+def test_missing_speech_model_disables_voice_commands_only(qapp):
+    (registered, problem), active = _register_speech(qapp, AppConfig())
+    assert registered is False
+    assert "drivion --download-models" in problem
+    assert active.services == []
+
+
+def test_disabled_voice_commands_are_quiet(qapp):
+    config = AppConfig.model_validate({"voice": {"enabled": False}})
+    (registered, problem), active = _register_speech(qapp, config)
+    assert (registered, problem) == (False, None)
+
+
+def test_speech_output_can_be_turned_off():
+    from drivion.speech.tts import SilentSpeaker
+
+    services = ServiceManager()
+    config = AppConfig.model_validate({"voice": {"tts_engine": "none"}})
+    assert isinstance(app_module._build_speaker(config, services), SilentSpeaker)
+    assert services.services == []
