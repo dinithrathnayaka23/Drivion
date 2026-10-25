@@ -25,3 +25,7 @@ def data_dir() -> Path:
 
 def log_dir() -> Path:
     return data_dir() / "logs"
+
+
+def models_dir() -> Path:
+    return data_dir() / "models"
