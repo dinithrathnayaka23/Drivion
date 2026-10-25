@@ -16,6 +16,12 @@ dependencies = [
     "pydantic>=2.7,<3",
     "pydantic-settings>=2.3,<3",
     "python-dotenv>=1.0,<2",
+    # Milestone 4: microphone capture and wake word.
+    "numpy>=1.26,<3",
+    "sounddevice>=0.4.6,<0.6",
+    # Pinned exactly: 0.6.0 is the last release and we rely on its Model API.
+    "openwakeword==0.6.0",
+    "onnxruntime>=1.17,<2",
 ]
 
 [project.optional-dependencies]

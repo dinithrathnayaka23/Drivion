@@ -27,6 +27,9 @@ def parts(qtbot, feed, monkeypatch):
     shell.show_initial()
     controller.start()
     yield controller, window, tray, shell
+    # Stop pending timers (e.g. a verification timeout) before the window is
+    # deleted, so they can't fire into a later test.
+    controller.shutdown("test teardown")
     tray.hide()
 
 

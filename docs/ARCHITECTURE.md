@@ -114,7 +114,7 @@ draws a static indicator instead.
 | **1** | **Scaffolding** ✅ | Config validation, secrets, logging, entry point, minimal window, tests |
 | 2 | Core lifecycle ✅ | State machine with transition rules, single-instance lock, worker-thread infrastructure, tray icon with Exit, simulated events |
 | 3 | Dashboard UI ✅ | Animated indicator, live state, mic/camera indicators, history panel (driven by fake events) |
-| 4 | Wake word | Microphone capture, Porcupine custom keyword, standby loop, mocked-audio tests |
+| 4 | Wake word ✅ | Microphone capture, Porcupine custom keyword, standby loop, mocked-audio tests |
 | 5 | Speech | faster-whisper command capture (silence/timeout handling), Windows TTS |
 | 6 | Intents (offline) | Pydantic intent schemas, rule-based parser with aliases, help/repeat/cancel |
 | 7 | Actions + safety | Action registry, risk levels, confirmation flow, allowlisted app launch, volume, brightness, lock, screenshot, window control, power actions (confirmed and mocked in tests) |
@@ -132,12 +132,12 @@ draws a static indicator instead.
 | UI | PySide6 6.9.x | The official Qt binding and LGPL-licensed; `QThread` plus signals covers the threading model |
 | Config / schemas | pydantic v2 + pydantic-settings | One validation library for config, secrets, intent parameters and action schemas |
 | Config format | TOML (stdlib `tomllib`) | Readable and supports comments; no extra dependency |
-| Wake word | Picovoice Porcupine (to verify in M4) | Low CPU use and custom phrases. It needs a free Picovoice account and AccessKey, and a custom `.ppn` keyword trained on the Picovoice Console for Windows. Fallback: openWakeWord. |
+| Wake word | **openWakeWord 0.6.0** (decided in M4) | Porcupine was checked first, but Picovoice's FAQ (October 2026) lists no plans for personal or non-commercial use, only a one-time trial. openWakeWord is offline, open source and needs no account. It sits behind a `WakeWordEngine` interface so Porcupine could be added later. See [WAKE_WORD.md](WAKE_WORD.md). |
+| Audio capture | sounddevice + numpy | PortAudio wheels for Windows, and the same capture code will serve speech-to-text in M5 |
 | STT | faster-whisper (CPU int8 first) | Runs offline and is accurate; CUDA can come later |
 | TTS | Windows SAPI first, Piper optional | SAPI needs no model download |
 | Face | OpenCV `FaceDetectorYN` (YuNet) + `FaceRecognizerSF` (SFace) | Both are in core OpenCV ≥4.5.4 as small ONNX models, so we avoid dlib/face_recognition build problems |
 | Template protection | Windows DPAPI via `ctypes` | Encrypts templates to your Windows account with no extra package |
-| Audio | sounddevice | PortAudio wheels for Windows |
 | Volume | pycaw | Core Audio API |
 | Brightness | WMI (`WmiMonitorBrightnessMethods`) through a fixed PowerShell command | Works on laptop panels; external monitors are often unsupported |
 | Tests | pytest + pytest-qt | Qt widgets can be tested offscreen |
@@ -152,8 +152,8 @@ draws a static indicator instead.
   video replay. Challenge-response liveness raises the effort an attacker needs, but
   it is not Windows Hello. Drivion therefore gates only its own features. It never
   replaces or bypasses Windows login.
-- **Wake-word licensing:** Porcupine terms, AccessKey validation (it may need internet
-  when the engine starts) and custom-keyword limits must be verified in M4.
+- **Wake-word licensing:** this was resolved in M4 by switching to openWakeWord. Its
+  pre-trained models are licensed CC BY-NC-SA 4.0, which allows personal use only.
 - **False wakes or missed wakes:** Sensitivity is configurable and is tuned manually
   in your room.
 - **Brightness:** Unsupported on many external monitors, so Drivion will report this

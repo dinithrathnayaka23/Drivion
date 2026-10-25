@@ -84,3 +84,57 @@ def test_two_real_processes_only_one_runs(tmp_path):
         first.kill()
         first.wait(10)
         first.stdout.close()
+
+
+# ----- wake word wiring and CLI ----------------------------------------------------
+
+from drivion import app as app_module  # noqa: E402
+from drivion.config import AppConfig  # noqa: E402
+from drivion.core.activity import ActivityFeed  # noqa: E402
+from drivion.core.controller import AssistantController  # noqa: E402
+from drivion.core.services import ServiceManager  # noqa: E402
+
+
+def _register(qapp, config):
+    standby = ServiceManager()
+    controller = AssistantController(5.0, standby_services=standby)
+    result = app_module._register_wake_word(config, controller, ActivityFeed(), standby)
+    return result, standby
+
+
+def test_missing_models_disable_listener_but_not_the_app(qapp):
+    (phrase, listening, problem), standby = _register(qapp, AppConfig())
+    assert listening is False
+    assert "drivion --download-models" in problem
+    assert standby.services == []
+    assert phrase == "Wake up, Drivion"
+
+
+def test_disabled_wake_word_is_quiet(qapp):
+    config = AppConfig.model_validate({"wake_word": {"enabled": False}})
+    (_, listening, problem), standby = _register(qapp, config)
+    assert (listening, problem) == (False, None)
+    assert standby.services == []
+
+
+def test_list_audio_devices(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr("drivion.audio.source.list_input_devices",
+                        lambda: [(1, "Microphone Array", "MME", True),
+                                 (4, "USB Headset", "Windows WASAPI", False)])
+    code = main(["--config", str(tmp_path / "none.toml"), "--list-audio-devices"])
+    out = capsys.readouterr().out
+    assert code == EXIT_OK
+    assert "[MME] Microphone Array   (default)" in out
+    assert "[Windows WASAPI] USB Headset" in out
+
+
+def test_download_failure_exits_with_error(monkeypatch, capsys, tmp_path):
+    from drivion.audio.models import ModelDownloadError
+
+    def fail(_target):
+        raise ModelDownloadError("offline")
+
+    monkeypatch.setattr("drivion.audio.models.download_models", fail)
+    code = main(["--config", str(tmp_path / "none.toml"), "--download-models"])
+    assert code == app_module.EXIT_ERROR
+    assert "offline" in capsys.readouterr().err

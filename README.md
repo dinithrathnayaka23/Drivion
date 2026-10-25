@@ -3,11 +3,12 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 3 (dashboard UI).** Drivion has a state machine, a system tray app,
-> a single-instance lock, and an animated dashboard with device indicators, a
-> conversation view and command history. There is no microphone, camera, AI or system
-> control yet; a developer menu (`--simulate`) fakes those events. See
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full plan.
+> **Status: Milestone 4 (wake word).** Drivion runs as a tray app with an animated
+> dashboard, and in standby it listens for a wake word with openWakeWord, offline.
+> Face verification, speech commands, AI and system control are not built yet; a
+> developer menu (`--simulate`) fakes those events. See
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the plan and
+> [docs/WAKE_WORD.md](docs/WAKE_WORD.md) for wake-word setup.
 
 ## Requirements
 
@@ -29,6 +30,13 @@ If `Activate.ps1` is blocked by the execution policy, run this once:
 
 `-e` installs Drivion in *editable* mode, so your code changes take effect without
 reinstalling.
+
+Then download the wake-word models once (about 3.6 MB; each file is checked against a
+pinned SHA-256 hash):
+
+```powershell
+drivion --download-models
+```
 
 ## Configuration
 
@@ -63,7 +71,11 @@ Drivion starts in **STANDBY**: no window opens, and a round icon appears in the 
 tray (look under the `^` arrow on the taskbar). The icon colour shows the state:
 blue = standby, amber = verifying, cyan = active, red = error.
 
-- **Open Drivion** (tray click or menu) starts face verification. Real verification
+- **Wake word:** in standby, Drivion listens for **"Hey Jarvis"** (a built-in stand-in
+  until you train "Wake up, Drivion"; see [docs/WAKE_WORD.md](docs/WAKE_WORD.md)). While
+  it listens, the microphone chip is on. Saying the phrase starts face verification, and
+  the microphone is released straight away.
+- **Open Drivion** (tray click or menu) also starts face verification. Real verification
   arrives in Milestone 9; until then nothing answers, so after
   `face.verification_timeout_s` seconds Drivion **fails closed** and returns to standby.
 - With `--simulate`, use *Simulate → Wake word detected*, then *Face verified*, to reach
@@ -91,7 +103,7 @@ The tests run Qt offscreen and never touch your microphone, camera or power sett
 | Feature | Needs internet? |
 |---|---|
 | Config, logging, UI | No |
-| Wake word (Porcupine) | AccessKey validation (to be confirmed in M4) |
+| Wake word (openWakeWord) | Only for the one-time `--download-models` |
 | Speech-to-text (faster-whisper) | Only for the first model download |
 | Face verification | Only for the first model download |
 | General questions (cloud LLM) | Yes |
@@ -104,6 +116,14 @@ The tests run Qt offscreen and never touch your microphone, camera or power sett
   `config/settings.toml` to go back to the defaults.
 - **Nothing seems to happen when I run `drivion`:** that's standby. Look for the tray
   icon under the taskbar's `^` arrow.
+- **"Wake word unavailable":** run `drivion --download-models`. If it still appears,
+  check the log for the exact reason.
+- **Microphone chip shows "unavailable":** check *Settings → Privacy & security →
+  Microphone* and make sure *Let desktop apps access your microphone* is on. Also check
+  that no other app has exclusive use of the microphone. Then choose *Recover from
+  error* in the tray.
+- **The wake word never triggers:** run `drivion --list-audio-devices`, set
+  `wake_word.input_device` to your microphone, or raise `wake_word.sensitivity`.
 - **"Drivion is already running":** a copy is running in the tray. Use its *Exit Drivion*
   menu item, or end `python.exe` in Task Manager.
 

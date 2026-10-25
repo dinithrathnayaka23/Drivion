@@ -37,12 +37,17 @@ class AssistantController(QObject):
         self,
         verification_timeout_s: float,
         services: ServiceManager | None = None,
+        standby_services: ServiceManager | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._machine = StateMachine(AppState.STANDBY)
         self._machine.add_listener(self._on_transition)
+        # `services` run for the whole session; `standby_services` (the wake-word
+        # listener) run only while in STANDBY, so the microphone is released as
+        # soon as Drivion leaves standby.
         self._services = services or ServiceManager()
+        self._standby_services = standby_services or ServiceManager()
         self._attempt = 0
 
         self._verification_timer = QTimer(self)
@@ -82,6 +87,7 @@ class AssistantController(QObject):
         except Exception as exc:
             self._on_failure(Event(EventType.FAILURE, "startup", f"service start failed: {exc}"))
             return
+        self._start_standby_services()
         self.notification.emit("Drivion", "Drivion is running in standby.")
 
     def post_event(self, event: Event) -> None:
@@ -106,7 +112,7 @@ class AssistantController(QObject):
             return
         self._verification_timer.stop()
         self._machine.transition(AppState.SHUTTING_DOWN, reason)
-        failed = self._services.stop_all()
+        failed = self._standby_services.stop_all() + self._services.stop_all()
         if failed:
             log.error("Services that did not stop cleanly: %s", ", ".join(failed))
         self.shutdown_finished.emit()
@@ -181,3 +187,16 @@ class AssistantController(QObject):
 
     def _on_transition(self, transition: Transition) -> None:
         self.state_changed.emit(transition)
+        if transition.new is AppState.STANDBY:
+            self._start_standby_services()
+        elif transition.old is AppState.STANDBY:
+            failed = self._standby_services.stop_all()
+            if failed:
+                log.error("Standby services that did not stop: %s", ", ".join(failed))
+
+    def _start_standby_services(self) -> None:
+        try:
+            self._standby_services.start_all()
+        except Exception as exc:
+            # Queued rather than handled inline: we may be inside a transition.
+            self.post_event(Event(EventType.FAILURE, "standby services", str(exc)))

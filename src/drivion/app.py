@@ -26,6 +26,7 @@ from drivion.logging_setup import configure_logging
 log = logging.getLogger(__name__)
 
 EXIT_OK = 0
+EXIT_ERROR = 1
 EXIT_CONFIG_ERROR = 2
 EXIT_ALREADY_RUNNING = 3
 
@@ -47,6 +48,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--simulate", action="store_true",
         help="add a developer tray menu that fakes wake-word and face-verification events",
+    )
+    parser.add_argument(
+        "--download-models", action="store_true",
+        help="download and verify the wake-word model files, then exit",
+    )
+    parser.add_argument(
+        "--list-audio-devices", action="store_true",
+        help="list microphones (for wake_word.input_device), then exit",
     )
     parser.add_argument("--version", action="version", version=f"Drivion {__version__}")
     return parser.parse_args(argv)
@@ -76,7 +85,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(config.model_dump_json(indent=2))
         return EXIT_OK
 
+    if args.download_models:
+        return _download_models()
+    if args.list_audio_devices:
+        return _list_audio_devices()
+
     return _run_ui(config, simulate=args.simulate)
+
+
+def _download_models() -> int:
+    from drivion.audio.models import ModelDownloadError, download_models
+
+    target = paths.models_dir()
+    print(f"Downloading wake-word models to {target} ...")
+    try:
+        written = download_models(target)
+    except ModelDownloadError as exc:
+        print(f"Download failed: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Done: {len(written)} downloaded, all files verified.")
+    return EXIT_OK
+
+
+def _list_audio_devices() -> int:
+    from drivion.audio.source import list_input_devices
+
+    devices = list_input_devices()
+    if not devices:
+        print("No microphones found.")
+        return EXIT_ERROR
+    for index, name, host_api, is_default in devices:
+        print(f"{index:>3}  [{host_api}] {name}{'   (default)' if is_default else ''}")
+    print("\nSet wake_word.input_device to an index or part of a name; omit it to use the default.")
+    return EXIT_OK
 
 
 def _run_ui(config: AppConfig, simulate: bool) -> int:
@@ -120,15 +161,28 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
     from drivion.ui.shell import Shell
     from drivion.ui.tray import TrayIcon
 
-    controller = AssistantController(config.face.verification_timeout_s)
+    from drivion.core.services import ServiceManager
+
+    standby_services = ServiceManager()
+    controller = AssistantController(
+        config.face.verification_timeout_s, standby_services=standby_services
+    )
     feed = ActivityFeed(history_limit=config.ui.history_limit)
+
+    wake_phrase, listening, wake_word_problem = _register_wake_word(
+        config, controller, feed, standby_services
+    )
 
     tray = None
     if QSystemTrayIcon.isSystemTrayAvailable():
-        tray = TrayIcon(simulate=simulate)
+        tray = TrayIcon(simulate=simulate, simulate_microphone=not listening)
     else:
         log.warning("No system tray available; the window will stay visible instead")
-    window = MainWindow(history_limit=config.ui.history_limit, animated=config.ui.animations)
+    window = MainWindow(
+        history_limit=config.ui.history_limit,
+        animated=config.ui.animations,
+        wake_phrase=wake_phrase,
+    )
     shell = Shell(controller, feed, window, tray)
 
     activation = ActivationServer(name)
@@ -151,6 +205,8 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
 
     shell.show_initial()
     controller.start()
+    if wake_word_problem:
+        controller.notification.emit("Wake word unavailable", wake_word_problem)
     log.info("Drivion running (state %s, simulation %s)", controller.state,
              "on" if simulate else "off")
 
@@ -159,6 +215,54 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
     signal.signal(signal.SIGINT, signal.default_int_handler)
     log.info("Drivion exited with code %s", code)
     return code
+
+
+def _register_wake_word(
+    config: AppConfig, controller, feed, standby_services
+) -> tuple[str, bool, str | None]:
+    """Build the wake-word listener if possible.
+
+    Returns (phrase to display, listener registered?, problem to report).
+    A missing model or engine is not fatal: Drivion still runs and can be
+    opened from the tray.
+    """
+    from drivion.audio.source import MicrophoneSource
+    from drivion.audio.wake_word import (
+        DEFAULT_PHRASE,
+        OpenWakeWordEngine,
+        WakeWordDetector,
+        WakeWordService,
+        WakeWordUnavailable,
+        resolve_wake_word,
+        sensitivity_to_threshold,
+    )
+    from drivion.core.activity import Device
+    from drivion.core.events import Event, EventType
+
+    settings = config.wake_word
+    if not settings.enabled:
+        log.info("Wake word disabled in config")
+        return settings.phrase or DEFAULT_PHRASE, False, None
+
+    try:
+        model_path, phrase = resolve_wake_word(settings.model, paths.models_dir(), settings.phrase)
+        engine = OpenWakeWordEngine(model_path, paths.models_dir())
+    except WakeWordUnavailable as exc:
+        log.warning("Wake word unavailable: %s", exc)
+        return settings.phrase or DEFAULT_PHRASE, False, str(exc)
+
+    service = WakeWordService(
+        source_factory=lambda: MicrophoneSource(settings.input_device),
+        engine=engine,
+        detector=WakeWordDetector(sensitivity_to_threshold(settings.sensitivity), settings.cooldown_s),
+        on_detected=lambda score: controller.post_event(
+            Event(EventType.WAKE_WORD_DETECTED, "wake word", f"score {score:.2f}")),
+        on_microphone=lambda state: feed.set_device(Device.MICROPHONE, state),
+        on_crash=controller.service_crashed,
+    )
+    standby_services.register(service)
+    log.info("Wake word ready: %r (%s)", phrase, model_path.name)
+    return phrase, True, None
 
 
 if __name__ == "__main__":
