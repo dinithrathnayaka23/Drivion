@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from drivion import __version__
-from drivion.core.activity import CommandRecord, Device, DeviceState
+from drivion.core.activity import CommandRecord, Device, DeviceState, VoiceStatus
 from drivion.core.state import AppState
 from drivion.ui import theme
 from drivion.ui.icons import state_icon
@@ -42,9 +42,21 @@ from drivion.ui.widgets.panels import ConversationCard, DeviceChip, HistoryPanel
 NARROW_WIDTH = 820
 
 
+_ACTIVE_VOICE_TEXT = {
+    VoiceStatus.IDLE: "Listening for commands",
+    VoiceStatus.LISTENING: "Listening for commands",
+    VoiceStatus.HEARING: "Hearing you…",
+    VoiceStatus.TRANSCRIBING: "Working out what you said…",
+    VoiceStatus.SPEAKING: "Speaking…",
+}
+
+
 def listening_text(state: AppState, microphone: DeviceState,
-                   wake_phrase: str = "Wake up, Drivion") -> str:
+                   wake_phrase: str = "Wake up, Drivion",
+                   voice: VoiceStatus = VoiceStatus.IDLE) -> str:
     """Describe honestly what Drivion is listening for right now."""
+    if state is AppState.ACTIVE and voice is VoiceStatus.LOADING:
+        return "Preparing speech recognition…"
     if microphone is DeviceState.ERROR:
         return "Microphone unavailable"
     if microphone is DeviceState.OFF:
@@ -52,7 +64,7 @@ def listening_text(state: AppState, microphone: DeviceState,
     if state is AppState.STANDBY:
         return f"Listening for “{wake_phrase}”"
     if state is AppState.ACTIVE:
-        return "Listening for commands"
+        return _ACTIVE_VOICE_TEXT[voice]
     return "Microphone on"
 
 
@@ -68,6 +80,7 @@ class MainWindow(QMainWindow):
         self._allow_close = False
         self._state = AppState.STANDBY
         self._wake_phrase = wake_phrase
+        self._voice = VoiceStatus.IDLE
         self.setWindowTitle("Drivion")
         self.resize(1000, 640)
         self.setMinimumSize(420, 560)
@@ -172,6 +185,10 @@ class MainWindow(QMainWindow):
         chip.set_state(state)
         self._refresh_listening()
 
+    def set_voice_status(self, status: VoiceStatus) -> None:
+        self._voice = status
+        self._refresh_listening()
+
     def add_record(self, record: CommandRecord) -> None:
         self.conversation.show_record(record)
         self.history.add_record(record)
@@ -186,7 +203,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_listening(self) -> None:
         self.listening_label.setText(
-            listening_text(self._state, self.mic_chip.state, self._wake_phrase)
+            listening_text(self._state, self.mic_chip.state, self._wake_phrase, self._voice)
         )
 
     # ----- window behaviour ------------------------------------------------------
