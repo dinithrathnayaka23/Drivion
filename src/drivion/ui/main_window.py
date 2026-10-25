@@ -42,14 +42,15 @@ from drivion.ui.widgets.panels import ConversationCard, DeviceChip, HistoryPanel
 NARROW_WIDTH = 820
 
 
-def listening_text(state: AppState, microphone: DeviceState) -> str:
+def listening_text(state: AppState, microphone: DeviceState,
+                   wake_phrase: str = "Wake up, Drivion") -> str:
     """Describe honestly what Drivion is listening for right now."""
     if microphone is DeviceState.ERROR:
         return "Microphone unavailable"
     if microphone is DeviceState.OFF:
         return "Not listening (microphone off)"
     if state is AppState.STANDBY:
-        return "Listening for “Wake up, Drivion”"
+        return f"Listening for “{wake_phrase}”"
     if state is AppState.ACTIVE:
         return "Listening for commands"
     return "Microphone on"
@@ -61,10 +62,12 @@ class MainWindow(QMainWindow):
     clear_history_clicked = Signal()
     close_requested = Signal()  # user pressed X; the shell decides what that means
 
-    def __init__(self, history_limit: int = 50, animated: bool = True) -> None:
+    def __init__(self, history_limit: int = 50, animated: bool = True,
+                 wake_phrase: str = "Wake up, Drivion") -> None:
         super().__init__()
         self._allow_close = False
         self._state = AppState.STANDBY
+        self._wake_phrase = wake_phrase
         self.setWindowTitle("Drivion")
         self.resize(1000, 640)
         self.setMinimumSize(420, 560)
@@ -182,7 +185,9 @@ class MainWindow(QMainWindow):
         self.history.clear()
 
     def _refresh_listening(self) -> None:
-        self.listening_label.setText(listening_text(self._state, self.mic_chip.state))
+        self.listening_label.setText(
+            listening_text(self._state, self.mic_chip.state, self._wake_phrase)
+        )
 
     # ----- window behaviour ------------------------------------------------------
 
