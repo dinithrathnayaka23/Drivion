@@ -38,16 +38,20 @@ class AssistantController(QObject):
         verification_timeout_s: float,
         services: ServiceManager | None = None,
         standby_services: ServiceManager | None = None,
+        active_services: ServiceManager | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._machine = StateMachine(AppState.STANDBY)
         self._machine.add_listener(self._on_transition)
-        # `services` run for the whole session; `standby_services` (the wake-word
-        # listener) run only while in STANDBY, so the microphone is released as
-        # soon as Drivion leaves standby.
+        # `services` run for the whole session. State-scoped services run only
+        # while Drivion is in that state: the wake-word listener in STANDBY, the
+        # command listener in ACTIVE. Each releases the microphone on leaving.
         self._services = services or ServiceManager()
-        self._standby_services = standby_services or ServiceManager()
+        self._scoped_services: dict[AppState, ServiceManager] = {
+            AppState.STANDBY: standby_services or ServiceManager(),
+            AppState.ACTIVE: active_services or ServiceManager(),
+        }
         self._attempt = 0
 
         self._verification_timer = QTimer(self)
@@ -64,6 +68,7 @@ class AssistantController(QObject):
             EventType.VERIFICATION_SUCCEEDED: self._on_verification_succeeded,
             EventType.VERIFICATION_FAILED: self._on_verification_failed,
             EventType.SLEEP_REQUESTED: self._on_sleep_requested,
+            EventType.COMMAND_TIMEOUT: self._on_command_timeout,
             EventType.FAILURE: self._on_failure,
             EventType.RECOVER_REQUESTED: self._on_recover,
             EventType.EXIT_REQUESTED: lambda event: self.shutdown(event.detail or "exit requested"),
@@ -87,7 +92,7 @@ class AssistantController(QObject):
         except Exception as exc:
             self._on_failure(Event(EventType.FAILURE, "startup", f"service start failed: {exc}"))
             return
-        self._start_standby_services()
+        self._start_scoped_services(AppState.STANDBY)
         self.notification.emit("Drivion", "Drivion is running in standby.")
 
     def post_event(self, event: Event) -> None:
@@ -112,7 +117,8 @@ class AssistantController(QObject):
             return
         self._verification_timer.stop()
         self._machine.transition(AppState.SHUTTING_DOWN, reason)
-        failed = self._standby_services.stop_all() + self._services.stop_all()
+        failed = [name for scoped in self._scoped_services.values() for name in scoped.stop_all()]
+        failed += self._services.stop_all()
         if failed:
             log.error("Services that did not stop cleanly: %s", ", ".join(failed))
         self.shutdown_finished.emit()
@@ -157,6 +163,14 @@ class AssistantController(QObject):
         # Later milestones stop the camera / speech recogniser here.
         self._machine.transition(AppState.STANDBY, "active services stopped")
 
+    def _on_command_timeout(self, event: Event) -> None:
+        if self.state is not AppState.ACTIVE:
+            self._ignore(event)
+            return
+        self._machine.transition(AppState.SLEEPING, "no command heard")
+        self._machine.transition(AppState.STANDBY, "active services stopped")
+        self.notification.emit("Back to standby", "No command was heard, so Drivion went back to standby.")
+
     def _on_failure(self, event: Event) -> None:
         if self.state is AppState.ERROR:
             log.warning("Additional failure while in ERROR: %s (%s)", event.source, event.detail)
@@ -187,16 +201,19 @@ class AssistantController(QObject):
 
     def _on_transition(self, transition: Transition) -> None:
         self.state_changed.emit(transition)
-        if transition.new is AppState.STANDBY:
-            self._start_standby_services()
-        elif transition.old is AppState.STANDBY:
-            failed = self._standby_services.stop_all()
+        # Stop the old state's services first so the microphone is free for
+        # the next state's services.
+        old = self._scoped_services.get(transition.old)
+        if old is not None:
+            failed = old.stop_all()
             if failed:
-                log.error("Standby services that did not stop: %s", ", ".join(failed))
+                log.error("%s services that did not stop: %s", transition.old, ", ".join(failed))
+        if transition.new in self._scoped_services:
+            self._start_scoped_services(transition.new)
 
-    def _start_standby_services(self) -> None:
+    def _start_scoped_services(self, state: AppState) -> None:
         try:
-            self._standby_services.start_all()
+            self._scoped_services[state].start_all()
         except Exception as exc:
             # Queued rather than handled inline: we may be inside a transition.
-            self.post_event(Event(EventType.FAILURE, "standby services", str(exc)))
+            self.post_event(Event(EventType.FAILURE, f"{state.lower()} services", str(exc)))
