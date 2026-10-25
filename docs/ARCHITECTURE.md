@@ -94,6 +94,14 @@ discarded, so a late "face OK" from a timed-out attempt can't unlock a newer one
 | "Lock Windows" (**Windows lock**) | Lock screen appears | Keeps running | Session locked; you need your Windows password/PIN |
 | "Put my computer to sleep" (**Windows sleep**) | The PC suspends after you confirm | Frozen along with everything else | Low-power state; the mic is off, so the wake word cannot wake the PC |
 
+### Per-state services (M4, M5)
+
+The controller runs some services only in one state. The wake-word listener runs in
+STANDBY, and the command listener (VAD → Whisper) runs in ACTIVE. The old state's
+services are stopped before the new state's start, so the two never hold the microphone
+at the same time. The speech output (`WindowsSpeaker`) is a session service, so a reply
+can finish after Drivion returns to standby.
+
 ### Dashboard data flow (M3)
 
 `core/activity.py` holds an `ActivityFeed`, the single source of truth for what the
@@ -115,7 +123,7 @@ draws a static indicator instead.
 | 2 | Core lifecycle ✅ | State machine with transition rules, single-instance lock, worker-thread infrastructure, tray icon with Exit, simulated events |
 | 3 | Dashboard UI ✅ | Animated indicator, live state, mic/camera indicators, history panel (driven by fake events) |
 | 4 | Wake word ✅ | Microphone capture, Porcupine custom keyword, standby loop, mocked-audio tests |
-| 5 | Speech | faster-whisper command capture (silence/timeout handling), Windows TTS |
+| 5 | Speech ✅ | faster-whisper command capture (silence/timeout handling), Windows TTS |
 | 6 | Intents (offline) | Pydantic intent schemas, rule-based parser with aliases, help/repeat/cancel |
 | 7 | Actions + safety | Action registry, risk levels, confirmation flow, allowlisted app launch, volume, brightness, lock, screenshot, window control, power actions (confirmed and mocked in tests) |
 | 8 | LLM | Provider interface, one cloud provider, structured intent fallback, general Q&A, network-error handling |
@@ -134,8 +142,8 @@ draws a static indicator instead.
 | Config format | TOML (stdlib `tomllib`) | Readable and supports comments; no extra dependency |
 | Wake word | **openWakeWord 0.6.0** (decided in M4) | Porcupine was checked first, but Picovoice's FAQ (October 2026) lists no plans for personal or non-commercial use, only a one-time trial. openWakeWord is offline, open source and needs no account. It sits behind a `WakeWordEngine` interface so Porcupine could be added later. See [WAKE_WORD.md](WAKE_WORD.md). |
 | Audio capture | sounddevice + numpy | PortAudio wheels for Windows, and the same capture code will serve speech-to-text in M5 |
-| STT | faster-whisper (CPU int8 first) | Runs offline and is accurate; CUDA can come later |
-| TTS | Windows SAPI first, Piper optional | SAPI needs no model download |
+| STT | **faster-whisper 1.2.1**, `base.en`, CPU int8 (M5) | Runs offline and is accurate (0.5–1.2 s per command here). Models come from pinned Hugging Face revisions. Its bundled Silero VAD detects where commands start and end, so no extra download. CUDA can come later. See [SPEECH.md](SPEECH.md). |
+| TTS | **Windows SAPI via comtypes** (M5) | Needs no model download, and the voices are already installed. Piper is deferred; `tts_engine` only accepts `windows` or `none` until it exists. |
 | Face | OpenCV `FaceDetectorYN` (YuNet) + `FaceRecognizerSF` (SFace) | Both are in core OpenCV ≥4.5.4 as small ONNX models, so we avoid dlib/face_recognition build problems |
 | Template protection | Windows DPAPI via `ctypes` | Encrypts templates to your Windows account with no extra package |
 | Volume | pycaw | Core Audio API |
