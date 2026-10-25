@@ -196,3 +196,53 @@ def test_service_crash_callback_moves_to_error(controller, qtbot):
         target=controller.service_crashed, args=("wake-word", RuntimeError("boom"))
     ).start()
     qtbot.waitUntil(lambda: controller.state is S.ERROR, timeout=1000)
+
+
+# ----- standby services (the wake-word listener) -----------------------------------
+
+
+@pytest.fixture
+def with_listener(qtbot):
+    listener = FakeService("wake-word")
+    standby = ServiceManager()
+    standby.register(listener)
+    ctrl = AssistantController(verification_timeout_s=5.0, standby_services=standby)
+    ctrl.start()
+    return ctrl, listener
+
+
+def test_listener_runs_only_in_standby(with_listener):
+    ctrl, listener = with_listener
+    assert listener.is_running
+    send(ctrl, E.WAKE_WORD_DETECTED)
+    assert not listener.is_running  # microphone released while verifying
+    verify(ctrl)
+    assert not listener.is_running  # and while active
+    send(ctrl, E.SLEEP_REQUESTED)
+    assert listener.is_running      # listening again in standby
+    assert (listener.started, listener.stopped) == (2, 1)
+
+
+def test_listener_restarts_after_failed_verification_and_recovery(with_listener):
+    ctrl, listener = with_listener
+    send(ctrl, E.WAKE_WORD_DETECTED)
+    send(ctrl, E.VERIFICATION_FAILED, attempt=ctrl.verification_attempt)
+    assert listener.is_running
+    send(ctrl, E.FAILURE, "mic")
+    assert not listener.is_running
+    send(ctrl, E.RECOVER_REQUESTED)
+    assert listener.is_running
+
+
+def test_listener_stopped_on_shutdown(with_listener):
+    ctrl, listener = with_listener
+    ctrl.shutdown()
+    assert not listener.is_running
+
+
+def test_listener_start_failure_enters_error(qtbot):
+    standby = ServiceManager()
+    standby.register(FakeService("wake-word", fail_start=True))
+    ctrl = AssistantController(verification_timeout_s=5.0, standby_services=standby)
+    ctrl.start()
+    qtbot.waitUntil(lambda: ctrl.state is S.ERROR, timeout=1000)
