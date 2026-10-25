@@ -254,6 +254,9 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
         controller.notification.emit("Voice commands unavailable", speech_problem)
     log.info("Drivion running (state %s, simulation %s)", controller.state,
              "on" if simulate else "off")
+    # Runs once the event loop is actually processing events, i.e. when a
+    # second launch's activation request can be accepted.
+    QTimer.singleShot(0, lambda: log.info("Event loop started"))
 
     code = app.exec()
     activation.close()

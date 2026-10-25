@@ -113,7 +113,9 @@ class ActivationServer(QObject):
                 self.activation_requested.emit()
 
 
-def notify_running_instance(name: str, timeout_ms: int = 1000) -> bool:
+def notify_running_instance(name: str, timeout_ms: int = 3000) -> bool:
+    # Generous timeout: the running copy may be busy (e.g. still starting up)
+    # and only accepts the connection once its event loop is running.
     """Ask an already-running Drivion to open. Returns True if it was reached."""
     socket = QLocalSocket()
     socket.connectToServer(f"{name}.Activation")
