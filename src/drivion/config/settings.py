@@ -68,9 +68,21 @@ class FaceSettings(_Section):
 
 
 class VoiceSettings(_Section):
-    stt_model: str = Field(default="base.en", min_length=1)
-    tts_engine: Literal["windows", "piper"] = "windows"
-    command_timeout_s: float = Field(default=8.0, gt=0.0, le=60.0)
+    # Speech input (recognition) while ACTIVE.
+    enabled: bool = True
+    stt_model: Literal["tiny.en", "base.en", "small.en"] = "base.en"
+    stt_threads: int = Field(default=0, ge=0, le=16)  # 0 = let faster-whisper decide
+    speech_threshold: float = Field(default=0.5, ge=0.1, le=0.9)
+    end_silence_s: float = Field(default=0.8, ge=0.3, le=3.0)
+    max_command_s: float = Field(default=15.0, ge=3.0, le=60.0)
+    # No speech for this long while ACTIVE -> back to standby.
+    command_timeout_s: float = Field(default=20.0, ge=3.0, le=300.0)
+    # Speech output (Windows voices).
+    tts_engine: Literal["windows", "none"] = "windows"
+    tts_voice: str | None = None  # part of a voice name, e.g. "Zira"; omit for default
+    tts_rate: int = Field(default=0, ge=-10, le=10)
+    tts_volume: int = Field(default=100, ge=0, le=100)
+    greeting: str = "I'm listening."  # spoken on activation; "" to stay quiet
 
 
 class LLMSettings(_Section):

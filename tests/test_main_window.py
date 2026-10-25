@@ -1,6 +1,6 @@
 import pytest
 
-from drivion.core.activity import CommandRecord, Device, DeviceState, Outcome
+from drivion.core.activity import CommandRecord, Device, DeviceState, Outcome, VoiceStatus
 from drivion.core.state import AppState
 from drivion.ui.main_window import NARROW_WIDTH, MainWindow, listening_text
 
@@ -134,3 +134,26 @@ def test_buttons_emit_signals(qtbot):
         window.sleep_button.click()
     with qtbot.waitSignal(window.exit_clicked, timeout=500):
         window.exit_button.click()
+
+
+@pytest.mark.parametrize(
+    "voice, expected",
+    [
+        (VoiceStatus.LISTENING, "Listening for commands"),
+        (VoiceStatus.HEARING, "Hearing you…"),
+        (VoiceStatus.TRANSCRIBING, "Working out what you said…"),
+        (VoiceStatus.SPEAKING, "Speaking…"),
+    ],
+)
+def test_voice_status_while_active(voice, expected):
+    assert listening_text(AppState.ACTIVE, DeviceState.ACTIVE, voice=voice) == expected
+
+
+def test_loading_message_shows_before_the_microphone_opens(qtbot):
+    window = make_window(qtbot)
+    window.set_state(AppState.ACTIVE)
+    window.set_voice_status(VoiceStatus.LOADING)
+    assert window.listening_label.text() == "Preparing speech recognition…"
+    window.set_device(Device.MICROPHONE, DeviceState.ACTIVE)
+    window.set_voice_status(VoiceStatus.HEARING)
+    assert window.listening_label.text() == "Hearing you…"

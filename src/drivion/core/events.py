@@ -17,6 +17,7 @@ class EventType(StrEnum):
     VERIFICATION_SUCCEEDED = "VERIFICATION_SUCCEEDED"
     VERIFICATION_FAILED = "VERIFICATION_FAILED"
     SLEEP_REQUESTED = "SLEEP_REQUESTED"            # "Drivion, go to sleep"
+    COMMAND_TIMEOUT = "COMMAND_TIMEOUT"            # no speech for a while when active
     FAILURE = "FAILURE"                            # a subsystem crashed
     RECOVER_REQUESTED = "RECOVER_REQUESTED"
     EXIT_REQUESTED = "EXIT_REQUESTED"

@@ -246,3 +246,51 @@ def test_listener_start_failure_enters_error(qtbot):
     ctrl = AssistantController(verification_timeout_s=5.0, standby_services=standby)
     ctrl.start()
     qtbot.waitUntil(lambda: ctrl.state is S.ERROR, timeout=1000)
+
+
+# ----- active services (the command listener) and the silence timeout --------------
+
+
+@pytest.fixture
+def with_command_listener(qtbot):
+    wake, commands = FakeService("wake-word"), FakeService("command-listener")
+    standby, active = ServiceManager(), ServiceManager()
+    standby.register(wake)
+    active.register(commands)
+    ctrl = AssistantController(5.0, standby_services=standby, active_services=active)
+    ctrl.transitions = []
+    ctrl.state_changed.connect(lambda t: ctrl.transitions.append((t.old, t.new)))
+    ctrl.start()
+    return ctrl, wake, commands
+
+
+def test_command_listener_runs_only_while_active(with_command_listener):
+    ctrl, wake, commands = with_command_listener
+    assert wake.is_running and not commands.is_running
+    activate(ctrl)
+    assert commands.is_running and not wake.is_running  # never both on the mic
+    send(ctrl, E.SLEEP_REQUESTED)
+    assert wake.is_running and not commands.is_running
+
+
+def test_command_timeout_returns_to_standby(with_command_listener, qtbot):
+    ctrl, wake, commands = with_command_listener
+    activate(ctrl)
+    with qtbot.waitSignal(ctrl.notification, timeout=500):
+        send(ctrl, E.COMMAND_TIMEOUT, "command listener")
+    assert ctrl.state is S.STANDBY
+    assert wake.is_running and not commands.is_running
+    assert ctrl.transitions[-2:] == [(S.ACTIVE, S.SLEEPING), (S.SLEEPING, S.STANDBY)]
+
+
+def test_late_command_timeout_is_ignored(with_command_listener):
+    ctrl, *_ = with_command_listener
+    send(ctrl, E.COMMAND_TIMEOUT)  # e.g. arrives after the user already said "go to sleep"
+    assert ctrl.state is S.STANDBY
+
+
+def test_exit_while_active_stops_command_listener(with_command_listener):
+    ctrl, wake, commands = with_command_listener
+    activate(ctrl)
+    ctrl.shutdown()
+    assert not commands.is_running and not wake.is_running

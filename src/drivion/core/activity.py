@@ -39,6 +39,17 @@ class DeviceState(StrEnum):
     ERROR = "ERROR"        # missing, busy or failed
 
 
+class VoiceStatus(StrEnum):
+    """What the voice pipeline is doing while ACTIVE (shown on the dashboard)."""
+
+    IDLE = "IDLE"
+    LOADING = "LOADING"            # loading the speech-recognition model
+    LISTENING = "LISTENING"        # waiting for you to speak
+    HEARING = "HEARING"            # you are speaking
+    TRANSCRIBING = "TRANSCRIBING"  # turning speech into text
+    SPEAKING = "SPEAKING"          # Drivion is talking (input is ignored)
+
+
 class Outcome(StrEnum):
     PENDING = "PENDING"
     SUCCESS = "SUCCESS"
@@ -60,6 +71,7 @@ class ActivityFeed(QObject):
     record_added = Signal(object)            # CommandRecord
     record_updated = Signal(object)          # CommandRecord
     history_cleared = Signal()
+    voice_status_changed = Signal(object)    # VoiceStatus
 
     _dispatch = Signal(object)
 
@@ -67,6 +79,7 @@ class ActivityFeed(QObject):
         super().__init__(parent)
         self._history: deque[CommandRecord] = deque(maxlen=history_limit)
         self._devices = {device: DeviceState.OFF for device in Device}
+        self._voice_status = VoiceStatus.IDLE
         self._ids = itertools.count(1)
         self._id_lock = threading.Lock()
         self._dispatch.connect(lambda fn: fn(), Qt.ConnectionType.QueuedConnection)
@@ -81,10 +94,17 @@ class ActivityFeed(QObject):
     def device_state(self, device: Device) -> DeviceState:
         return self._devices[device]
 
+    @property
+    def voice_status(self) -> VoiceStatus:
+        return self._voice_status
+
     # ----- updates (any thread) ------------------------------------------------
 
     def set_device(self, device: Device, state: DeviceState) -> None:
         self._run(lambda: self._set_device(device, state))
+
+    def set_voice_status(self, status: VoiceStatus) -> None:
+        self._run(lambda: self._set_voice_status(status))
 
     def add_command(self, command: str) -> int:
         """Record a command as PENDING and return its id for ``complete_command``."""
@@ -112,6 +132,12 @@ class ActivityFeed(QObject):
             return
         self._devices[device] = state
         self.device_changed.emit(device, state)
+
+    def _set_voice_status(self, status: VoiceStatus) -> None:
+        if self._voice_status is status:
+            return
+        self._voice_status = status
+        self.voice_status_changed.emit(status)
 
     def _add(self, record: CommandRecord) -> None:
         self._history.append(record)

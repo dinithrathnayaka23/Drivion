@@ -23,6 +23,9 @@ _KEY_PATTERNS = [
 
 _LOG_FORMAT = "%(asctime)s %(levelname)-7s [%(threadName)s] %(name)s: %(message)s"
 
+# Third-party libraries that are chatty at INFO; their warnings still get through.
+_QUIET_LIBRARIES = ("comtypes", "faster_whisper", "huggingface_hub", "httpx")
+
 
 class RedactingFilter(logging.Filter):
     def __init__(self, secrets: Iterable[str] = ()) -> None:
@@ -61,6 +64,8 @@ def configure_logging(level: str, log_dir: Path, secrets: Iterable[str] = ()) ->
         root.removeHandler(handler)
         handler.close()
     root.setLevel(level)
+    for name in _QUIET_LIBRARIES:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     redactor = RedactingFilter(secrets)
     formatter = logging.Formatter(_LOG_FORMAT)

@@ -3,12 +3,13 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 4 (wake word).** Drivion runs as a tray app with an animated
-> dashboard, and in standby it listens for a wake word with openWakeWord, offline.
-> Face verification, speech commands, AI and system control are not built yet; a
+> **Status: Milestone 5 (speech).** Drivion runs as a tray app with an animated
+> dashboard. In standby it listens for a wake word, and while active it transcribes
+> spoken commands and answers aloud, all offline. It doesn't act on commands yet
+> (Milestone 6), and face verification, AI and system control aren't built yet; a
 > developer menu (`--simulate`) fakes those events. See
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the plan and
-> [docs/WAKE_WORD.md](docs/WAKE_WORD.md) for wake-word setup.
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/WAKE_WORD.md](docs/WAKE_WORD.md)
+> and [docs/SPEECH.md](docs/SPEECH.md).
 
 ## Requirements
 
@@ -31,8 +32,9 @@ If `Activate.ps1` is blocked by the execution policy, run this once:
 `-e` installs Drivion in *editable* mode, so your code changes take effect without
 reinstalling.
 
-Then download the wake-word models once (about 3.6 MB; each file is checked against a
-pinned SHA-256 hash):
+Then download the models once: the wake word (about 3.6 MB, each file checked against a
+pinned SHA-256 hash) and speech recognition (`base.en`, about 150 MB, from a pinned
+revision):
 
 ```powershell
 drivion --download-models
@@ -80,9 +82,12 @@ blue = standby, amber = verifying, cyan = active, red = error.
   `face.verification_timeout_s` seconds Drivion **fails closed** and returns to standby.
 - With `--simulate`, use *Simulate → Wake word detected*, then *Face verified*, to reach
   **ACTIVE** and open the dashboard.
-- While the dashboard is open, *Simulate → Voice command* adds fake commands to the
-  conversation and history (nothing is executed). *Toggle microphone/camera indicator*
-  previews the privacy indicators.
+- **Voice commands:** when the dashboard opens, Drivion says *"I'm listening."* Speak
+  a command and it appears in the conversation and history, and Drivion repeats it
+  aloud. It doesn't act on commands until Milestone 6. After 20 seconds of silence it
+  returns to standby. See [docs/SPEECH.md](docs/SPEECH.md).
+- *Simulate → Voice command* adds scripted fake commands instead (nothing is executed).
+  *Toggle camera indicator* previews the privacy indicator.
 - **Go to sleep**, or closing the window with X, returns to standby. The process keeps
   running in the tray.
 - **Exit Drivion** (tray menu or window button) stops the background process. Ctrl+C in
@@ -97,6 +102,9 @@ pytest            # or: pytest -v
 ```
 
 The tests run Qt offscreen and never touch your microphone, camera or power settings.
+Audio tests use speech synthesized with Windows' built-in voice, and the speaker tests
+run the real Windows voice at volume 0 (silent). Tests that need the downloaded models
+are skipped until you run `drivion --download-models`.
 
 ## Offline vs online
 
@@ -104,7 +112,8 @@ The tests run Qt offscreen and never touch your microphone, camera or power sett
 |---|---|
 | Config, logging, UI | No |
 | Wake word (openWakeWord) | Only for the one-time `--download-models` |
-| Speech-to-text (faster-whisper) | Only for the first model download |
+| Speech-to-text (faster-whisper) | Only for the one-time `--download-models` |
+| Spoken replies (Windows voices) | No |
 | Face verification | Only for the first model download |
 | General questions (cloud LLM) | Yes |
 
@@ -124,6 +133,13 @@ The tests run Qt offscreen and never touch your microphone, camera or power sett
   error* in the tray.
 - **The wake word never triggers:** run `drivion --list-audio-devices`, set
   `wake_word.input_device` to your microphone, or raise `wake_word.sensitivity`.
+- **"Voice commands unavailable":** run `drivion --download-models` (needed again if you
+  change `voice.stt_model`).
+- **Background noise becomes a "command", or I get cut off:** raise
+  `voice.speech_threshold`, or raise `voice.end_silence_s` (see
+  [docs/SPEECH.md](docs/SPEECH.md)).
+- **No spoken replies:** check `voice.tts_engine = "windows"`, the system volume, and
+  `drivion --list-voices`.
 - **"Drivion is already running":** a copy is running in the tray. Use its *Exit Drivion*
   menu item, or end `python.exe` in Task Manager.
 

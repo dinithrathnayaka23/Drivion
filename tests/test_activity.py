@@ -82,3 +82,15 @@ def test_updates_from_background_thread_arrive_on_main_thread(feed, qtbot):
     qtbot.waitUntil(lambda: len(delivered_on) == 2, timeout=1000)
     assert delivered_on == [threading.main_thread()] * 2
     assert feed.device_state(Device.MICROPHONE) is DeviceState.ACTIVE
+
+
+def test_voice_status_changes_are_signalled_once(feed):
+    from drivion.core.activity import VoiceStatus
+
+    seen = []
+    feed.voice_status_changed.connect(seen.append)
+    feed.set_voice_status(VoiceStatus.LISTENING)
+    feed.set_voice_status(VoiceStatus.LISTENING)
+    feed.set_voice_status(VoiceStatus.HEARING)
+    assert seen == [VoiceStatus.LISTENING, VoiceStatus.HEARING]
+    assert feed.voice_status is VoiceStatus.HEARING

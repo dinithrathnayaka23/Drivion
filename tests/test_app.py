@@ -70,20 +70,23 @@ def test_two_real_processes_only_one_runs(tmp_path):
            "--config", str(tmp_path / "none.toml"), "--env-file", str(tmp_path / ".env")]
     log_file = paths.log_dir() / "drivion.log"
 
-    first = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    # DEVNULL, not PIPE: nobody reads the first instance's console output, and
+    # a full pipe would block its next log write (we read the log file instead).
+    first = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        assert _wait_for_log(log_file, "Drivion running"), "first instance never started"
+        # Wait until its event loop runs, i.e. it can accept activation requests.
+        assert _wait_for_log(log_file, "Event loop started"), "first instance never started"
 
         second = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=30)
-        assert second.returncode == EXIT_ALREADY_RUNNING
-        assert "asked it to open" in second.stdout
+        details = f"stdout={second.stdout!r} stderr={second.stderr[-500:]!r}"
+        assert second.returncode == EXIT_ALREADY_RUNNING, details
+        assert "asked it to open" in second.stdout, details
 
         assert _wait_for_log(log_file, "Activation requested by another Drivion launch")
         assert first.poll() is None  # the first instance is unaffected
     finally:
         first.kill()
         first.wait(10)
-        first.stdout.close()
 
 
 # ----- wake word wiring and CLI ----------------------------------------------------
@@ -138,3 +141,34 @@ def test_download_failure_exits_with_error(monkeypatch, capsys, tmp_path):
     code = main(["--config", str(tmp_path / "none.toml"), "--download-models"])
     assert code == app_module.EXIT_ERROR
     assert "offline" in capsys.readouterr().err
+
+
+def _register_speech(qapp, config):
+    from drivion.speech.tts import SilentSpeaker
+
+    active = ServiceManager()
+    controller = AssistantController(5.0, active_services=active)
+    result = app_module._register_speech(config, controller, ActivityFeed(), SilentSpeaker(), active)
+    return result, active
+
+
+def test_missing_speech_model_disables_voice_commands_only(qapp):
+    (registered, problem), active = _register_speech(qapp, AppConfig())
+    assert registered is False
+    assert "drivion --download-models" in problem
+    assert active.services == []
+
+
+def test_disabled_voice_commands_are_quiet(qapp):
+    config = AppConfig.model_validate({"voice": {"enabled": False}})
+    (registered, problem), active = _register_speech(qapp, config)
+    assert (registered, problem) == (False, None)
+
+
+def test_speech_output_can_be_turned_off():
+    from drivion.speech.tts import SilentSpeaker
+
+    services = ServiceManager()
+    config = AppConfig.model_validate({"voice": {"tts_engine": "none"}})
+    assert isinstance(app_module._build_speaker(config, services), SilentSpeaker)
+    assert services.services == []

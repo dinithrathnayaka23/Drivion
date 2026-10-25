@@ -64,6 +64,7 @@ class Shell(QObject):
         feed.record_added.connect(window.add_record)
         feed.record_updated.connect(window.update_record)
         feed.history_cleared.connect(window.clear_history)
+        feed.voice_status_changed.connect(window.set_voice_status)
         for device in Device:
             window.set_device(device, feed.device_state(device))
         for record in feed.history:
