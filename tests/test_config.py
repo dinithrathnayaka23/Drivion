@@ -78,3 +78,17 @@ def test_wake_word_model_must_be_builtin_or_onnx(tmp_path):
 def test_input_device_accepts_index_or_name(tmp_path, value, expected):
     config = load_config(write(tmp_path, f"[wake_word]\ninput_device = {value}\n"))
     assert config.wake_word.input_device == expected
+
+
+@pytest.mark.parametrize(
+    "toml_text, key",
+    [
+        ('[voice]\nstt_model = "large-v3"\n', "voice.stt_model"),
+        ('[voice]\ntts_engine = "piper"\n', "voice.tts_engine"),  # not implemented
+        ("[voice]\ntts_rate = 11\n", "voice.tts_rate"),
+        ("[voice]\nend_silence_s = 0.1\n", "voice.end_silence_s"),
+    ],
+)
+def test_invalid_voice_settings(tmp_path, toml_text, key):
+    with pytest.raises(ConfigError, match=key):
+        load_config(write(tmp_path, toml_text))

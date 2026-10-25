@@ -28,9 +28,18 @@ liveness_mode = "challenge" # "none", "blink" or "challenge"
 verification_timeout_s = 10.0  # 1..60; no result in time = access denied
 
 [voice]
-stt_model = "base.en"       # faster-whisper model name
-tts_engine = "windows"      # "windows" or "piper"
-command_timeout_s = 8.0     # seconds of silence before a command is abandoned
+enabled = true              # listen for spoken commands while the dashboard is open
+stt_model = "base.en"       # "tiny.en" (fastest), "base.en" or "small.en" (most accurate)
+stt_threads = 0             # CPU threads for recognition; 0 = automatic
+speech_threshold = 0.5      # 0.1..0.9; raise it if background noise counts as speech
+end_silence_s = 0.8         # this much silence ends a command
+max_command_s = 15.0        # longest single command
+command_timeout_s = 20.0    # no speech for this long -> back to standby
+tts_engine = "windows"      # "windows" (built-in voices) or "none" (text only)
+# tts_voice = "Zira"        # part of a voice name; see `drivion --list-voices`
+tts_rate = 0                # -10 (slow) .. 10 (fast)
+tts_volume = 100            # 0..100
+greeting = "I'm listening." # spoken when the dashboard opens; "" for silence
 
 [llm]
 provider = "none"           # "none", "openai" or "anthropic"
