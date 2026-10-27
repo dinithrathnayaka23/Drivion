@@ -3,15 +3,14 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 6 (offline command understanding).** Drivion runs as a tray app
-> with an animated dashboard. In standby it listens for a wake word. While active it
-> transcribes spoken commands, works out what you meant without the internet, and
-> answers aloud. Help, repeat, cancel and *go to sleep* work; computer controls such as
-> volume and apps are understood but not carried out yet (Milestone 7). Face
-> verification and AI aren't built yet; a developer menu (`--simulate`) fakes those
-> events. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-> [docs/WAKE_WORD.md](docs/WAKE_WORD.md), [docs/SPEECH.md](docs/SPEECH.md) and
-> [docs/COMMANDS.md](docs/COMMANDS.md).
+> **Status: Milestone 7 (actions and safety).** Drivion runs as a tray app with an
+> animated dashboard. In standby it listens for a wake word. While active it understands
+> spoken commands offline and **carries them out**: volume, brightness, allowlisted apps,
+> websites and folders, minimize/restore, screenshots, lock, and sleep, restart or shut
+> down (only after you confirm). Face verification and AI aren't built yet; a developer
+> menu (`--simulate`) fakes verification. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+> [docs/WAKE_WORD.md](docs/WAKE_WORD.md), [docs/SPEECH.md](docs/SPEECH.md),
+> [docs/COMMANDS.md](docs/COMMANDS.md) and [docs/ACTIONS.md](docs/ACTIONS.md).
 
 ## Requirements
 
@@ -87,11 +86,14 @@ blue = standby, amber = verifying, cyan = active, red = error.
 - **Voice commands:** when the dashboard opens, Drivion says *"I'm listening."* Say
   things like *"open Chrome"*, *"set the volume to 40 percent"*, *"help"* or *"repeat
   that"*. **"Drivion, go to sleep"** returns it to standby, and so do 20 seconds of
-  silence. Computer controls are understood but not carried out until Milestone 7. See
-  [docs/COMMANDS.md](docs/COMMANDS.md) for everything you can say.
-- *Simulate → Voice command* sends sample phrases through the same command parser, so
-  you can try commands without a microphone. *Toggle camera indicator* previews the
-  privacy indicator.
+  silence. Commands are carried out and checked. For **sleep, restart and shut down**
+  Drivion asks *"Are you sure…?"* and acts only on a clear **yes**, and "cancel" stops a
+  restart or shutdown during its 10-second delay. See
+  [docs/COMMANDS.md](docs/COMMANDS.md) and [docs/ACTIONS.md](docs/ACTIONS.md).
+- *Simulate → Voice command* sends harmless sample phrases through the real pipeline,
+  so you can try commands without a microphone. *"Take a screenshot"* really saves one to
+  `Pictures\Screenshots`. The samples never include power commands. *Toggle camera
+  indicator* previews the privacy indicator.
 - **Go to sleep**, or closing the window with X, returns to standby. The process keeps
   running in the tray.
 - **Exit Drivion** (tray menu or window button) stops the background process. Ctrl+C in

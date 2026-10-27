@@ -117,6 +117,6 @@ def test_spoken_commands_are_understood_end_to_end(transcriber, tmp_path, spoken
     commands, _ = listen(transcriber, frames_of(silence(1), audio, silence(1.5)))
     assert len(commands) == 1, commands
     c = CommandsSettings()
-    result = IntentParser(Catalog(c.apps, c.websites, c.folders)).parse(commands[0])
+    result = IntentParser(Catalog.from_settings(c)).parse(commands[0])
     assert isinstance(result, Understood), (commands[0], result)
     assert result.intent.kind == expected, (commands[0], result.intent)

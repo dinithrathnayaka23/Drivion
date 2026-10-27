@@ -25,7 +25,7 @@ def slept():
 @pytest.fixture
 def responder(slept):
     c = CommandsSettings()
-    return AssistantResponder(Catalog(c.apps, c.websites, c.folders),
+    return AssistantResponder(Catalog.from_settings(c),
                               on_go_to_sleep=lambda: slept.append(True), wake_phrase="Hey Jarvis")
 
 

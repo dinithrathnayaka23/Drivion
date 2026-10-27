@@ -331,19 +331,56 @@ def _build_speaker(config: AppConfig, session_services):
     return speaker
 
 
-def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_phrase: str):
-    """Transcript -> intent -> reply. Shared by voice input and the simulation menu."""
+def _windows_backends():
+    from drivion.actions.handlers import Backends
+    from drivion.actions.windows.audio import PycawVolume
+    from drivion.actions.windows.desktop import WindowsDesktop
+    from drivion.actions.windows.display import WmiBrightness
+    from drivion.actions.windows.power import WindowsPower
+    from drivion.actions.windows.screen import GdiScreenshotter
+
+    return Backends(PycawVolume(), WmiBrightness(), WindowsDesktop(), GdiScreenshotter(),
+                    WindowsPower())
+
+
+def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_phrase: str,
+                             backends=None):
+    """Transcript -> intent -> (safety-checked action) -> reply.
+
+    Shared by voice input and the simulation menu. ``backends`` defaults to
+    the real Windows implementations; tests pass fakes.
+    """
+    from drivion.actions.handlers import PowerScheduler, build_registry
     from drivion.core.commands import CommandProcessor
     from drivion.core.events import Event, EventType
+    from drivion.core.state import AppState
+    from drivion.intents import schemas
     from drivion.intents.catalog import Catalog
     from drivion.intents.responder import AssistantResponder
+    from drivion.safety.executor import SafeExecutor
 
-    commands = config.commands
+    backends = backends or _windows_backends()
+    catalog = Catalog.from_settings(config.commands)
+    actions = config.actions
+    power = PowerScheduler(backends.power, actions.power_delay_s,
+                           hibernate=actions.sleep_method == "hibernate", notify=speaker.say)
+    registry = build_registry(backends, config.commands, actions, catalog.spoken_name, power)
+    executor = SafeExecutor(
+        registry,
+        # Actions only while unlocked (ACTIVE). Read from the listener thread;
+        # reading the state attribute is atomic, and commands are only heard in
+        # ACTIVE anyway - this is the second, independent check.
+        is_authorized=lambda: controller.state is AppState.ACTIVE,
+        confirmation_timeout_s=actions.confirmation_timeout_s,
+        describe=lambda intent: schemas.describe(intent, catalog.spoken_name),
+    )
     responder = AssistantResponder(
-        Catalog(commands.apps, commands.websites, commands.folders),
+        catalog,
         # Thread-safe: the responder runs in the command listener's thread.
         on_go_to_sleep=lambda: controller.post_event(Event(EventType.SLEEP_REQUESTED, "voice")),
         wake_phrase=wake_phrase,
+        executor=executor,
+        cancel_scheduled=power.cancel,
     )
     return CommandProcessor(feed, speaker, responder)
 

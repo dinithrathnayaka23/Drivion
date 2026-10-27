@@ -94,6 +94,17 @@ discarded, so a late "face OK" from a timed-out attempt can't unlock a newer one
 | "Lock Windows" (**Windows lock**) | Lock screen appears | Keeps running | Session locked; you need your Windows password/PIN |
 | "Put my computer to sleep" (**Windows sleep**) | The PC suspends after you confirm | Frozen along with everything else | Low-power state; the mic is off, so the wake word cannot wake the PC |
 
+### Actions and safety (M7)
+
+`intent → SafeExecutor → ActionSpec.handler → backend`. The `ActionRegistry` is the
+complete list of executable intents, each with a risk level. `SafeExecutor` is the only
+caller of handlers. It refuses unregistered intents, fails closed unless Drivion is
+ACTIVE, holds HIGH-risk intents (sleep, restart, shut down) for an explicit, timely
+"yes", converts handler crashes into failures, and writes every decision to the
+`drivion.audit` log. Backends (`actions/windows/`) sit behind Protocols, so tests use fakes.
+The real power backend also refuses to act while `DRIVION_POWER_DRY_RUN` is set, which
+the test suite always sets. See [ACTIONS.md](ACTIONS.md).
+
 ### Command understanding (M6)
 
 `transcript → normalize → whole-sentence rules → pydantic-validated Intent → responder`.
@@ -135,7 +146,7 @@ draws a static indicator instead.
 | 4 | Wake word ✅ | Microphone capture, Porcupine custom keyword, standby loop, mocked-audio tests |
 | 5 | Speech ✅ | faster-whisper command capture (silence/timeout handling), Windows TTS |
 | 6 | Intents (offline) ✅ | Pydantic intent schemas, rule-based parser with aliases, help/repeat/cancel |
-| 7 | Actions + safety | Action registry, risk levels, confirmation flow, allowlisted app launch, volume, brightness, lock, screenshot, window control, power actions (confirmed and mocked in tests) |
+| 7 | Actions + safety ✅ | Action registry, risk levels, confirmation flow, allowlisted app launch, volume, brightness, lock, screenshot, window control, power actions (confirmed and mocked in tests) |
 | 8 | LLM | Provider interface, one cloud provider, structured intent fallback, general Q&A, network-error handling |
 | 9 | Face verification | Consent-based enrollment, YuNet detection + SFace embeddings, encrypted local templates, threshold calibration |
 | 10 | Liveness | Challenge-response (blink/turn head), honest limits documented |

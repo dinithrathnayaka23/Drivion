@@ -9,7 +9,7 @@ from drivion.intents.parser import IntentParser, Invalid, NotUnderstood, Underst
 @pytest.fixture(scope="module")
 def parser():
     c = CommandsSettings()
-    return IntentParser(Catalog(c.apps, c.websites, c.folders))
+    return IntentParser(Catalog.from_settings(c))
 
 
 def parsed(parser, text):

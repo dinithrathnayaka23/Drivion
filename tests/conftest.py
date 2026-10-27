@@ -17,6 +17,9 @@ def isolated_env(tmp_path, monkeypatch):
             monkeypatch.delenv(name)
     monkeypatch.setenv("DRIVION_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("DRIVION_INSTANCE_ID", f"DrivionTest-{uuid.uuid4().hex}")
+    # Never sleep, restart or shut down the computer from a test, even by accident:
+    # the real power backend refuses to act while this is set.
+    monkeypatch.setenv("DRIVION_POWER_DRY_RUN", "1")
     yield
     root = logging.getLogger()
     for handler in list(root.handlers):
