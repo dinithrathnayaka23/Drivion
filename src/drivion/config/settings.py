@@ -102,19 +102,44 @@ class LLMSettings(_Section):
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 
 
+class AppEntry(_Section):
+    """One allowlisted app."""
+
+    # Extra spoken names (the id itself, with "_" as spaces, always works).
+    aliases: list[str] = []
+    # What Windows should open: an App Paths name ("chrome.exe"), a program on
+    # PATH ("notepad.exe") or a full path. No arguments are ever passed.
+    launch: str | None = Field(default=None, min_length=1)
+    # Executable name of its windows, for minimize/restore (e.g. "chrome.exe").
+    process: str | None = Field(default=None, min_length=1)
+
+    @field_validator("launch")
+    @classmethod
+    def _no_arguments(cls, value: str | None) -> str | None:
+        # Defence in depth: Windows treats the whole string as one file name anyway,
+        # but anything that looks like arguments or shell syntax is refused outright.
+        if value is not None and (
+            any(ch in value for ch in '"&|<>^*?%') or re.search(r"\s[/-]", value)
+        ):
+            raise ValueError("must be a program name or path, without arguments or shell symbols")
+        return value
+
+
 class CommandsSettings(_Section):
     """The allowlist: only these apps, websites and folders can be opened by voice.
 
     A section you set in your config replaces the defaults below entirely.
     """
 
-    # app id -> spoken aliases (the id itself, with "_" as spaces, also works)
-    apps: dict[str, list[str]] = {
-        "chrome": ["google chrome", "browser", "web browser"],
-        "vscode": ["vs code", "visual studio code", "code editor"],
-        "explorer": ["file explorer", "windows explorer", "files"],
-        "notepad": [],
-        "calculator": ["calc"],
+    apps: dict[str, AppEntry] = {
+        "chrome": AppEntry(aliases=["google chrome", "browser", "web browser"],
+                           launch="chrome.exe", process="chrome.exe"),
+        "vscode": AppEntry(aliases=["vs code", "visual studio code", "code editor"],
+                           launch="Code.exe", process="Code.exe"),
+        "explorer": AppEntry(aliases=["file explorer", "windows explorer", "files"],
+                             launch="explorer.exe", process="explorer.exe"),
+        "notepad": AppEntry(launch="notepad.exe", process="Notepad.exe"),
+        "calculator": AppEntry(aliases=["calc"], launch="calc.exe", process="CalculatorApp.exe"),
     }
     websites: dict[str, str] = {
         "youtube": "https://www.youtube.com",
@@ -128,6 +153,14 @@ class CommandsSettings(_Section):
         "desktop": "~/Desktop",
         "pictures": "~/Pictures",
     }
+
+    @field_validator("apps", mode="before")
+    @classmethod
+    def _aliases_list_shorthand(cls, value):
+        # Milestone 6 format, still accepted: `chrome = ["browser"]` (aliases only).
+        if isinstance(value, dict):
+            return {k: {"aliases": v} if isinstance(v, list) else v for k, v in value.items()}
+        return value
 
     @field_validator("apps", "websites", "folders")
     @classmethod
@@ -149,8 +182,25 @@ class CommandsSettings(_Section):
     def _no_ambiguous_names(self) -> "CommandsSettings":
         from drivion.intents.catalog import Catalog
 
-        Catalog(self.apps, self.websites, self.folders)  # raises on a name used twice
+        Catalog.from_settings(self)  # raises on a name used twice
         return self
+
+    @property
+    def app_aliases(self) -> dict[str, list[str]]:
+        return {app_id: entry.aliases for app_id, entry in self.apps.items()}
+
+
+class ActionsSettings(_Section):
+    """How Windows actions behave (see docs/ACTIONS.md)."""
+
+    screenshot_dir: str = "~/Pictures/Screenshots"
+    # High-risk actions (sleep, restart, shut down) wait this long for "yes".
+    confirmation_timeout_s: float = Field(default=15.0, ge=5.0, le=60.0)
+    # Restart and shutdown happen after this delay; saying "cancel" aborts them.
+    power_delay_s: int = Field(default=10, ge=5, le=120)
+    # "sleep" asks Windows to sleep (may be refused on Modern Standby laptops);
+    # "hibernate" saves your session to disk and powers off.
+    sleep_method: Literal["sleep", "hibernate"] = "sleep"
 
 
 class AppConfig(_Section):
@@ -160,6 +210,7 @@ class AppConfig(_Section):
     face: FaceSettings = FaceSettings()
     voice: VoiceSettings = VoiceSettings()
     commands: CommandsSettings = CommandsSettings()
+    actions: ActionsSettings = ActionsSettings()
     llm: LLMSettings = LLMSettings()
 
 

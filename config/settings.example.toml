@@ -46,10 +46,15 @@ greeting = "I'm listening." # spoken when the dashboard opens; "" for silence
 # (see docs/COMMANDS.md for the defaults). Ids are lowercase letters, digits or _.
 # A spoken name may only mean one thing; duplicates are rejected at startup.
 #
-# [commands.apps]                    # id = extra spoken names (the id also works)
-# chrome = ["google chrome", "browser"]
-# vscode = ["vs code", "visual studio code"]
-# spotify = ["music"]
+# [commands.apps.chrome]             # one table per app; the id is also a spoken name
+# aliases = ["google chrome", "browser"]
+# launch = "chrome.exe"              # App Paths name, program on PATH, or full path (no arguments)
+# process = "chrome.exe"             # its windows' program name, for minimize/restore
+#
+# [commands.apps.spotify]
+# aliases = ["music"]
+# launch = "C:/Users/you/AppData/Roaming/Spotify/Spotify.exe"
+# process = "Spotify.exe"
 #
 # [commands.websites]                # spoken name = https:// address only
 # youtube = "https://www.youtube.com"
@@ -58,6 +63,12 @@ greeting = "I'm listening." # spoken when the dashboard opens; "" for silence
 # [commands.folders]                 # spoken name = folder path
 # downloads = "~/Downloads"
 # projects = "C:/Users/you/Projects"
+
+[actions]
+screenshot_dir = "~/Pictures/Screenshots"
+confirmation_timeout_s = 15.0  # sleep/restart/shut down wait this long for "yes" (5..60)
+power_delay_s = 10             # restart/shut down happen after this delay; "cancel" stops them
+sleep_method = "sleep"         # "sleep" or "hibernate" (see docs/ACTIONS.md for Modern Standby laptops)
 
 [llm]
 provider = "none"           # "none", "openai" or "anthropic"

@@ -340,7 +340,7 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
 
     commands = config.commands
     responder = AssistantResponder(
-        Catalog(commands.apps, commands.websites, commands.folders),
+        Catalog.from_settings(commands),
         # Thread-safe: the responder runs in the command listener's thread.
         on_go_to_sleep=lambda: controller.post_event(Event(EventType.SLEEP_REQUESTED, "voice")),
         wake_phrase=wake_phrase,

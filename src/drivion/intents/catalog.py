@@ -52,6 +52,16 @@ class Catalog:
         for folder in folders:
             self._add(folder.replace("_", " "), Target(TargetKind.FOLDER, folder))
 
+    @classmethod
+    def from_settings(cls, commands) -> "Catalog":
+        """Build from ``CommandsSettings`` (the [commands] config section)."""
+        return cls(commands.app_aliases, commands.websites, commands.folders)
+
+    def spoken_name(self, target_id: str) -> str:
+        """How to say an id in a reply: "vscode" -> "vs code" (its first alias)."""
+        aliases = self.apps.get(target_id)
+        return aliases[0] if aliases else target_id.replace("_", " ")
+
     def _add(self, alias: str, target: Target) -> None:
         key = normalize(alias)
         existing = self._aliases.get(key)
