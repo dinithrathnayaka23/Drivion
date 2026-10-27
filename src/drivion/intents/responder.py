@@ -1,12 +1,17 @@
 """Decides what Drivion says (and does) for each recognised command.
 
-``AssistantResponder`` plugs into ``CommandProcessor`` in place of the
-Milestone 5 echo. It parses the transcript, then:
+``AssistantResponder`` plugs into ``CommandProcessor``. It parses the
+transcript, then:
 
-* built-ins work now: help, repeat, cancel, go to sleep;
-* system commands (volume, apps, power, ...) are understood and validated,
-  but only acknowledged - Milestone 7 adds the safety-checked actions;
+* built-ins: help, repeat, greetings and go to sleep;
+* system commands go to the ``SafeExecutor``, which runs registered actions
+  only, while Drivion is unlocked, and holds high-risk ones for a "yes";
+* yes / no / cancel answer a pending confirmation (or abort a scheduled
+  restart/shutdown);
 * questions are acknowledged until an AI provider exists (Milestone 8).
+
+Without an executor (``executor=None``) system commands are understood but
+only acknowledged.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from drivion.core.activity import Outcome
 from drivion.intents import schemas as s
 from drivion.intents.catalog import Catalog
 from drivion.intents.parser import IntentParser, Invalid, NotUnderstood, Understood
+from drivion.safety.executor import NeedsConfirmation, Refused, SafeExecutor
 
 log = logging.getLogger(__name__)
 
@@ -37,11 +43,15 @@ class AssistantResponder:
         catalog: Catalog,
         on_go_to_sleep: Callable[[], None],
         wake_phrase: str,
+        executor: SafeExecutor | None = None,
+        cancel_scheduled: Callable[[], str | None] = lambda: None,
     ) -> None:
         self._catalog = catalog
         self._parser = IntentParser(catalog)
         self._on_go_to_sleep = on_go_to_sleep
         self._wake_phrase = wake_phrase
+        self._executor = executor
+        self._cancel_scheduled = cancel_scheduled
         self._last_reply: str | None = None
         self._lock = threading.Lock()
 
@@ -54,24 +64,42 @@ class AssistantResponder:
                 self._last_reply = reply
         return reply, outcome
 
+    def name_for(self, target_id: str) -> str:
+        return self._catalog.spoken_name(target_id)
+
+    def describe(self, intent: s._Intent) -> str:
+        return s.describe(intent, self.name_for)
+
+    # ----- decisions ----------------------------------------------------------------
+
     def _respond(self, result) -> tuple[str, Outcome]:
         if isinstance(result, NotUnderstood):
-            return NOT_UNDERSTOOD_REPLY, Outcome.REJECTED
+            return self._after_dropping_pending(NOT_UNDERSTOOD_REPLY, Outcome.REJECTED)
         if isinstance(result, Invalid):
-            return result.reason, Outcome.REJECTED
+            return self._after_dropping_pending(result.reason, Outcome.REJECTED)
 
         intent = result.intent
         match intent:
-            case s.Help():
-                return self._help(), Outcome.SUCCESS
             case s.Repeat():
                 with self._lock:
                     last = self._last_reply
-                return (last, Outcome.SUCCESS) if last else (NOTHING_TO_REPEAT, Outcome.SUCCESS)
+                return (last or NOTHING_TO_REPEAT), Outcome.SUCCESS
+            case s.Confirm():
+                return self._confirm()
+            case s.Deny():
+                return self._deny()
             case s.Cancel():
-                return NOTHING_TO_CANCEL, Outcome.SUCCESS
-            case s.Confirm() | s.Deny():
-                return NOTHING_TO_CONFIRM, Outcome.REJECTED
+                return self._cancel()
+
+        # Any other command means the user moved on: forget a pending action.
+        note = self._drop_pending("another command was given")
+        reply, outcome = self._handle(intent)
+        return (f"{note} {reply}" if note else reply), outcome
+
+    def _handle(self, intent) -> tuple[str, Outcome]:
+        match intent:
+            case s.Help():
+                return self._help(), Outcome.SUCCESS
             case s.Greet():
                 return "Yes? What would you like me to do?", Outcome.SUCCESS
             case s.GoToSleep():
@@ -79,22 +107,66 @@ class AssistantResponder:
                 return f"Going to sleep. Say “{self._wake_phrase}” when you need me.", Outcome.SUCCESS
             case s.AskQuestion():
                 return QUESTION_REPLY, Outcome.REJECTED
-        what = s.describe(intent, self._name_for)
-        return f"I understood: {what}. I can't control the computer yet.", Outcome.REJECTED
+        if self._executor is None or not self._executor.handles(intent):
+            return (f"I understood: {self.describe(intent)}. I can't control the computer yet.",
+                    Outcome.REJECTED)
+        return _from_decision(self._executor.request(intent))
 
-    def _name_for(self, target_id: str) -> str:
-        aliases = self._catalog.apps.get(target_id)
-        return aliases[0] if aliases else target_id.replace("_", " ")
+    def _confirm(self) -> tuple[str, Outcome]:
+        decision = self._executor.confirm() if self._executor else None
+        if decision is None:
+            return NOTHING_TO_CONFIRM, Outcome.REJECTED
+        return _from_decision(decision)
+
+    def _deny(self) -> tuple[str, Outcome]:
+        dropped = self._executor.drop_pending("the user said no") if self._executor else None
+        if dropped is None:
+            return NOTHING_TO_CONFIRM, Outcome.REJECTED
+        return f"Okay, I won't {self.describe(dropped)}.", Outcome.SUCCESS
+
+    def _cancel(self) -> tuple[str, Outcome]:
+        if self._executor is not None:
+            dropped = self._executor.drop_pending("the user cancelled")
+            if dropped is not None:
+                return f"Okay, I won't {self.describe(dropped)}.", Outcome.SUCCESS
+        message = self._cancel_scheduled()
+        if message:
+            return message, Outcome.SUCCESS
+        return NOTHING_TO_CANCEL, Outcome.SUCCESS
+
+    def _drop_pending(self, reason: str) -> str | None:
+        dropped = self._executor.drop_pending(reason) if self._executor else None
+        return f"I've cancelled the request to {self.describe(dropped)}." if dropped else None
+
+    def _after_dropping_pending(self, reply: str, outcome: Outcome) -> tuple[str, Outcome]:
+        # Something unrelated or unclear was said while a "yes" was expected:
+        # never treat it as consent, and say so.
+        note = self._drop_pending("an unrecognised reply was given")
+        return (f"{note} {reply}" if note else reply), outcome
 
     def _help(self) -> str:
-        examples = [self._name_for(app_id) for app_id in list(self._catalog.apps)[:2]]
+        examples = [self.name_for(app_id) for app_id in list(self._catalog.apps)[:2]]
         example_app = " or ".join(examples) or "an app"
-        return (
+        text = (
             f"You can say things like: open {example_app}, set the volume to 50 percent, "
             "turn the brightness down, take a screenshot, or lock the computer. "
-            "Say repeat to hear my last answer, or go to sleep when you're done. "
-            "For now I understand those commands but can't carry out the computer ones yet."
+            "Say repeat to hear my last answer, or go to sleep when you're done."
         )
+        if self._executor is None:
+            text += " For now I understand those commands but can't carry out the computer ones yet."
+        else:
+            text += " Before sleep, restart or shut down I'll always ask you to confirm."
+        return text
+
+
+def _from_decision(decision) -> tuple[str, Outcome]:
+    if isinstance(decision, NeedsConfirmation):
+        return decision.prompt, Outcome.PENDING
+    if isinstance(decision, Refused):
+        return decision.reason, Outcome.REJECTED
+    result = decision.result
+    message = result.message[:1].upper() + result.message[1:]  # "google chrome is open."
+    return message, (Outcome.SUCCESS if result.success else Outcome.FAILED)
 
 
 def _summary(result) -> str:
