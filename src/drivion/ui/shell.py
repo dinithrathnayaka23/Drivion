@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import itertools
 import logging
+from collections.abc import Callable
 
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject
 
-from drivion.core.activity import ActivityFeed, Device, DeviceState, Outcome
+from drivion.core.activity import ActivityFeed, Device, DeviceState
 from drivion.core.controller import AssistantController
 from drivion.core.events import Event, EventType
 from drivion.core.state import AppState, Transition
@@ -26,16 +27,18 @@ from drivion.ui.tray import TrayIcon
 
 log = logging.getLogger(__name__)
 
-# Scripted commands for --simulate. Nothing is executed; they only exercise
-# the dashboard until real speech and actions exist (Milestones 5-8).
-SIMULATED_COMMANDS: list[tuple[str, str, Outcome]] = [
-    ("open chrome", "Simulated: Chrome would open now.", Outcome.SUCCESS),
-    ("set volume to 40 percent", "Simulated: volume would be set to 40%.", Outcome.SUCCESS),
-    ("shut down the computer", "Simulated: shutdown needs your confirmation, so nothing was done.",
-     Outcome.REJECTED),
-    ("what's the weather tomorrow", "Simulated: no AI provider is configured yet.", Outcome.FAILED),
+# Phrases for --simulate. They go through the real command pipeline (parser and
+# responder), exactly as if they had been spoken and transcribed.
+SIMULATED_PHRASES: list[str] = [
+    "Open Chrome.",
+    "Set the volume to 40%.",
+    "Turn the brightness down a bit.",
+    "Put my computer to sleep.",
+    "Set the volume to 150%.",
+    "What's the weather tomorrow?",
+    "Help.",
+    "Repeat that.",
 ]
-SIMULATED_REPLY_DELAY_MS = 700
 
 
 class Shell(QObject):
@@ -45,6 +48,7 @@ class Shell(QObject):
         feed: ActivityFeed,
         window: MainWindow,
         tray: TrayIcon | None,
+        command_handler: Callable[[str], None] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -53,7 +57,8 @@ class Shell(QObject):
         self.window = window
         self.tray = tray
         self.window_always_visible = tray is None
-        self._simulated_commands = itertools.cycle(SIMULATED_COMMANDS)
+        self._command_handler = command_handler
+        self._simulated_phrases = itertools.cycle(SIMULATED_PHRASES)
 
         controller.state_changed.connect(self._on_state_changed)
         controller.raise_window_requested.connect(self.window.show_and_raise)
@@ -106,16 +111,14 @@ class Shell(QObject):
         self._post(EventType.ACTIVATION_REQUESTED, "second launch")
 
     def simulate_command(self) -> None:
-        """Developer simulation: record a fake command, then a fake reply."""
+        """Developer simulation: feed the next sample phrase to the real command pipeline."""
         if self._controller.state is not AppState.ACTIVE:
             log.info("Ignoring simulated command outside ACTIVE")
             return
-        command, reply, outcome = next(self._simulated_commands)
-        record_id = self._feed.add_command(command)
-        QTimer.singleShot(
-            SIMULATED_REPLY_DELAY_MS,
-            lambda: self._feed.complete_command(record_id, reply, outcome),
-        )
+        if self._command_handler is None:
+            log.info("No command handler; simulated command ignored")
+            return
+        self._command_handler(next(self._simulated_phrases))
 
     # ----- internals ------------------------------------------------------
 

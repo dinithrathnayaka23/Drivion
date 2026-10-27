@@ -3,13 +3,15 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 5 (speech).** Drivion runs as a tray app with an animated
-> dashboard. In standby it listens for a wake word, and while active it transcribes
-> spoken commands and answers aloud, all offline. It doesn't act on commands yet
-> (Milestone 6), and face verification, AI and system control aren't built yet; a
-> developer menu (`--simulate`) fakes those events. See
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/WAKE_WORD.md](docs/WAKE_WORD.md)
-> and [docs/SPEECH.md](docs/SPEECH.md).
+> **Status: Milestone 6 (offline command understanding).** Drivion runs as a tray app
+> with an animated dashboard. In standby it listens for a wake word. While active it
+> transcribes spoken commands, works out what you meant without the internet, and
+> answers aloud. Help, repeat, cancel and *go to sleep* work; computer controls such as
+> volume and apps are understood but not carried out yet (Milestone 7). Face
+> verification and AI aren't built yet; a developer menu (`--simulate`) fakes those
+> events. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+> [docs/WAKE_WORD.md](docs/WAKE_WORD.md), [docs/SPEECH.md](docs/SPEECH.md) and
+> [docs/COMMANDS.md](docs/COMMANDS.md).
 
 ## Requirements
 
@@ -82,12 +84,14 @@ blue = standby, amber = verifying, cyan = active, red = error.
   `face.verification_timeout_s` seconds Drivion **fails closed** and returns to standby.
 - With `--simulate`, use *Simulate → Wake word detected*, then *Face verified*, to reach
   **ACTIVE** and open the dashboard.
-- **Voice commands:** when the dashboard opens, Drivion says *"I'm listening."* Speak
-  a command and it appears in the conversation and history, and Drivion repeats it
-  aloud. It doesn't act on commands until Milestone 6. After 20 seconds of silence it
-  returns to standby. See [docs/SPEECH.md](docs/SPEECH.md).
-- *Simulate → Voice command* adds scripted fake commands instead (nothing is executed).
-  *Toggle camera indicator* previews the privacy indicator.
+- **Voice commands:** when the dashboard opens, Drivion says *"I'm listening."* Say
+  things like *"open Chrome"*, *"set the volume to 40 percent"*, *"help"* or *"repeat
+  that"*. **"Drivion, go to sleep"** returns it to standby, and so do 20 seconds of
+  silence. Computer controls are understood but not carried out until Milestone 7. See
+  [docs/COMMANDS.md](docs/COMMANDS.md) for everything you can say.
+- *Simulate → Voice command* sends sample phrases through the same command parser, so
+  you can try commands without a microphone. *Toggle camera indicator* previews the
+  privacy indicator.
 - **Go to sleep**, or closing the window with X, returns to standby. The process keeps
   running in the tray.
 - **Exit Drivion** (tray menu or window button) stops the background process. Ctrl+C in
