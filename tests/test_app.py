@@ -148,7 +148,9 @@ def _register_speech(qapp, config):
 
     active = ServiceManager()
     controller = AssistantController(5.0, active_services=active)
-    result = app_module._register_speech(config, controller, ActivityFeed(), SilentSpeaker(), active)
+    feed, speaker = ActivityFeed(), SilentSpeaker()
+    processor = app_module._build_command_processor(config, controller, feed, speaker, "Hey Jarvis")
+    result = app_module._register_speech(config, controller, feed, speaker, processor, active)
     return result, active
 
 

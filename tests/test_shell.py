@@ -3,9 +3,8 @@ import pytest
 from drivion.core.activity import ActivityFeed, Device, DeviceState, Outcome
 from drivion.core.controller import AssistantController
 from drivion.core.state import AppState
-from drivion.ui import shell as shell_module
 from drivion.ui.main_window import MainWindow
-from drivion.ui.shell import SIMULATED_COMMANDS, Shell
+from drivion.ui.shell import SIMULATED_PHRASES, Shell
 from drivion.ui.tray import TrayIcon
 
 S = AppState
@@ -17,13 +16,17 @@ def feed(qapp):
 
 
 @pytest.fixture
-def parts(qtbot, feed, monkeypatch):
-    monkeypatch.setattr(shell_module, "SIMULATED_REPLY_DELAY_MS", 10)
+def handled():
+    return []
+
+
+@pytest.fixture
+def parts(qtbot, feed, handled):
     controller = AssistantController(verification_timeout_s=5.0)
     window = MainWindow()
     qtbot.addWidget(window)
     tray = TrayIcon(simulate=True)
-    shell = Shell(controller, feed, window, tray)
+    shell = Shell(controller, feed, window, tray, command_handler=handled.append)
     shell.show_initial()
     controller.start()
     yield controller, window, tray, shell
@@ -153,19 +156,17 @@ def test_clear_button_clears_feed_and_window(qtbot, parts, feed):
     assert window.history.count == 0
 
 
-def test_simulated_commands_only_when_active(qtbot, parts, feed):
+def test_simulated_phrases_go_to_the_command_pipeline_only_when_active(qtbot, parts, handled):
     controller, window, tray, shell = parts
     shell.simulate_command()
-    assert feed.history == []  # ignored in STANDBY
+    assert handled == []  # ignored in STANDBY
     assert not tray.simulation_actions["command"].isEnabled()
 
     activate_via_simulator(qtbot, controller, tray)
     assert tray.simulation_actions["command"].isEnabled()
     tray.simulate_command.emit()
-    command, reply, outcome = SIMULATED_COMMANDS[0]
-    assert window.history.count == 1
-    qtbot.waitUntil(lambda: feed.history[0].outcome is outcome, timeout=1000)
-    assert window.conversation.reply_label.text() == reply
+    tray.simulate_command.emit()
+    assert handled == SIMULATED_PHRASES[:2]
 
 
 def test_simulated_device_toggles(qtbot, parts, feed):

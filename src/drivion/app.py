@@ -208,7 +208,10 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
         config, controller, feed, standby_services
     )
     speaker = _build_speaker(config, session_services)
-    voice_input, speech_problem = _register_speech(config, controller, feed, speaker, active_services)
+    processor = _build_command_processor(config, controller, feed, speaker, wake_phrase)
+    voice_input, speech_problem = _register_speech(
+        config, controller, feed, speaker, processor, active_services
+    )
 
     def greet_on_activation(transition) -> None:
         if transition.new is AppState.ACTIVE and config.voice.greeting:
@@ -226,7 +229,7 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
         animated=config.ui.animations,
         wake_phrase=wake_phrase,
     )
-    shell = Shell(controller, feed, window, tray)
+    shell = Shell(controller, feed, window, tray, command_handler=processor.handle)
 
     activation = ActivationServer(name)
     activation.activation_requested.connect(shell.request_activation)
@@ -328,11 +331,29 @@ def _build_speaker(config: AppConfig, session_services):
     return speaker
 
 
-def _register_speech(config: AppConfig, controller, feed, speaker, active_services) -> tuple[bool, str | None]:
+def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_phrase: str):
+    """Transcript -> intent -> reply. Shared by voice input and the simulation menu."""
+    from drivion.core.commands import CommandProcessor
+    from drivion.core.events import Event, EventType
+    from drivion.intents.catalog import Catalog
+    from drivion.intents.responder import AssistantResponder
+
+    commands = config.commands
+    responder = AssistantResponder(
+        Catalog(commands.apps, commands.websites, commands.folders),
+        # Thread-safe: the responder runs in the command listener's thread.
+        on_go_to_sleep=lambda: controller.post_event(Event(EventType.SLEEP_REQUESTED, "voice")),
+        wake_phrase=wake_phrase,
+    )
+    return CommandProcessor(feed, speaker, responder)
+
+
+def _register_speech(
+    config: AppConfig, controller, feed, speaker, processor, active_services
+) -> tuple[bool, str | None]:
     """Build the command listener for ACTIVE. Returns (registered?, problem to report)."""
     from drivion.audio.source import MicrophoneSource
     from drivion.core.activity import Device
-    from drivion.core.commands import CommandProcessor, echo_responder
     from drivion.core.events import Event, EventType
     from drivion.speech.listener import CommandListenerService
     from drivion.speech.recorder import RecorderSettings
@@ -348,8 +369,6 @@ def _register_speech(config: AppConfig, controller, feed, speaker, active_servic
     except SpeechUnavailable as exc:
         log.warning("Voice commands unavailable: %s", exc)
         return False, str(exc)
-
-    processor = CommandProcessor(feed, speaker, echo_responder)
 
     def on_timeout() -> None:
         speaker.say(TIMEOUT_REPLY)

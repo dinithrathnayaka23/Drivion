@@ -5,12 +5,7 @@ import time
 import pytest
 
 from drivion.core.activity import ActivityFeed, Outcome
-from drivion.core.commands import (
-    ERROR_REPLY,
-    UNCLEAR_REPLY,
-    CommandProcessor,
-    echo_responder,
-)
+from drivion.core.commands import ERROR_REPLY, UNCLEAR_REPLY, CommandProcessor
 from drivion.speech.tts import SilentSpeaker, WindowsSpeaker
 
 
@@ -28,12 +23,6 @@ class RecordingSpeaker:
 
 
 # ----- command processor ------------------------------------------------------------
-
-
-def test_echo_responder_repeats_without_acting():
-    reply, outcome = echo_responder("Open Chrome.")
-    assert reply == "I heard: Open Chrome. I can't carry out commands yet."
-    assert outcome is Outcome.REJECTED
 
 
 def test_processor_records_and_speaks_reply(qapp):
@@ -57,7 +46,7 @@ def test_processor_survives_a_broken_responder(qapp):
 
 def test_unclear_speech_gets_a_spoken_hint_but_no_history(qapp):
     feed, speaker = ActivityFeed(), RecordingSpeaker()
-    CommandProcessor(feed, speaker, echo_responder).unclear()
+    CommandProcessor(feed, speaker, lambda t: ("unused", Outcome.SUCCESS)).unclear()
     assert feed.history == []
     assert speaker.said == [UNCLEAR_REPLY]
 

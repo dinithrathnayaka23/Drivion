@@ -1,9 +1,9 @@
 """What happens to a recognised command.
 
 ``CommandProcessor`` records the command in the activity feed, asks a
-*responder* what to do, records the outcome and speaks the reply. In
-Milestone 5 the responder only echoes what it heard; Milestone 6 replaces
-it with real intent parsing, without changing anything else.
+*responder* what to do, records the outcome and speaks the reply. The
+responder (``intents.responder.AssistantResponder``) parses the command;
+the processor doesn't know or care how.
 """
 
 from __future__ import annotations
@@ -20,12 +20,6 @@ Responder = Callable[[str], tuple[str, Outcome]]
 
 UNCLEAR_REPLY = "Sorry, I didn't catch that."
 ERROR_REPLY = "Sorry, something went wrong with that command."
-
-
-def echo_responder(text: str) -> tuple[str, Outcome]:
-    """Milestone 5 placeholder: confirm what was heard, act on nothing."""
-    heard = text.strip().rstrip(".!?")
-    return f"I heard: {heard}. I can't carry out commands yet.", Outcome.REJECTED
 
 
 class CommandProcessor:

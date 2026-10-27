@@ -94,3 +94,29 @@ def test_silence_and_room_noise_produce_no_command(transcriber):
     commands, unclear = listen(transcriber, frames_of(silence(3), hiss, silence(3)))
     assert commands == []
     assert unclear == []  # the VAD never even passed it to Whisper
+
+
+@pytest.mark.parametrize(
+    "spoken, expected",
+    [
+        ("Open Chrome", "OPEN_APP"),
+        ("Set the volume to forty percent", "SET_VOLUME"),
+        ("Drivion, go to sleep", "GO_TO_SLEEP"),
+        ("Put my computer to sleep", "SLEEP_COMPUTER"),
+        ("Take a screenshot", "TAKE_SCREENSHOT"),
+        ("What can you do", "HELP"),
+    ],
+)
+def test_spoken_commands_are_understood_end_to_end(transcriber, tmp_path, spoken, expected):
+    """Synthesized speech -> real VAD + Whisper -> rule-based parser."""
+    from drivion.config.settings import CommandsSettings
+    from drivion.intents.catalog import Catalog
+    from drivion.intents.parser import IntentParser, Understood
+
+    audio = wav_audio(spoken, tmp_path / "cmd.wav")
+    commands, _ = listen(transcriber, frames_of(silence(1), audio, silence(1.5)))
+    assert len(commands) == 1, commands
+    c = CommandsSettings()
+    result = IntentParser(Catalog(c.apps, c.websites, c.folders)).parse(commands[0])
+    assert isinstance(result, Understood), (commands[0], result)
+    assert result.intent.kind == expected, (commands[0], result.intent)
