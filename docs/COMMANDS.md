@@ -4,9 +4,9 @@ Drivion understands commands **offline** with a rule-based parser. No internet a
 are involved. Every command becomes one of a fixed list of *intents*, each with checked
 parameters.
 
-> **Milestone 6 status:** help, repeat, cancel and *go to sleep* work. All other commands
-> are understood and validated, but Drivion only replies "I understood: … I can't control
-> the computer yet." Milestone 7 adds the safety-checked actions.
+> **Since Milestone 7** these commands are carried out through a safety layer: registered
+> actions only, only while Drivion is unlocked, and sleep, restart and shut down only after
+> you say yes. See [ACTIONS.md](ACTIONS.md).
 
 ## What you can say
 
