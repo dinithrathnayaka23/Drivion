@@ -165,8 +165,22 @@ def test_simulated_phrases_go_to_the_command_pipeline_only_when_active(qtbot, pa
     activate_via_simulator(qtbot, controller, tray)
     assert tray.simulation_actions["command"].isEnabled()
     tray.simulate_command.emit()
+    qtbot.waitUntil(lambda: len(handled) == 1, timeout=2000)  # runs off the UI thread
     tray.simulate_command.emit()
+    qtbot.waitUntil(lambda: len(handled) == 2, timeout=2000)
     assert handled == SIMULATED_PHRASES[:2]
+
+
+def test_simulated_samples_never_include_power_commands():
+    from drivion.config.settings import CommandsSettings
+    from drivion.intents.catalog import Catalog
+    from drivion.intents.parser import IntentParser, Understood
+
+    parser = IntentParser(Catalog.from_settings(CommandsSettings()))
+    for phrase in SIMULATED_PHRASES:
+        result = parser.parse(phrase)
+        kind = result.intent.kind if isinstance(result, Understood) else None
+        assert kind not in {"SLEEP_COMPUTER", "RESTART_COMPUTER", "SHUTDOWN_COMPUTER"}, phrase
 
 
 def test_simulated_device_toggles(qtbot, parts, feed):

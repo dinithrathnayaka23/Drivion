@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import threading
 from collections.abc import Callable
 
 from PySide6.QtCore import QObject
@@ -30,11 +31,11 @@ log = logging.getLogger(__name__)
 # Phrases for --simulate. They go through the real command pipeline (parser and
 # responder), exactly as if they had been spoken and transcribed.
 SIMULATED_PHRASES: list[str] = [
-    "Open Chrome.",
-    "Set the volume to 40%.",
-    "Turn the brightness down a bit.",
-    "Put my computer to sleep.",
+    # Real actions now run, so the samples are harmless ones. Power commands
+    # are left out on purpose: try those by voice, where you answer yes or no.
+    "Take a screenshot.",
     "Set the volume to 150%.",
+    "Open Spotify.",
     "What's the weather tomorrow?",
     "Help.",
     "Repeat that.",
@@ -118,7 +119,9 @@ class Shell(QObject):
         if self._command_handler is None:
             log.info("No command handler; simulated command ignored")
             return
-        self._command_handler(next(self._simulated_phrases))
+        # Off the UI thread, like real voice commands: actions can take seconds.
+        threading.Thread(target=self._command_handler, args=(next(self._simulated_phrases),),
+                         name="simulated-command", daemon=True).start()
 
     # ----- internals ------------------------------------------------------
 
