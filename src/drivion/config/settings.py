@@ -11,11 +11,19 @@ fails loudly at startup instead of being silently ignored.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 
 class ConfigError(Exception):
@@ -91,12 +99,67 @@ class LLMSettings(_Section):
     request_timeout_s: float = Field(default=20.0, gt=0.0, le=120.0)
 
 
+_ID = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+
+class CommandsSettings(_Section):
+    """The allowlist: only these apps, websites and folders can be opened by voice.
+
+    A section you set in your config replaces the defaults below entirely.
+    """
+
+    # app id -> spoken aliases (the id itself, with "_" as spaces, also works)
+    apps: dict[str, list[str]] = {
+        "chrome": ["google chrome", "browser", "web browser"],
+        "vscode": ["vs code", "visual studio code", "code editor"],
+        "explorer": ["file explorer", "windows explorer", "files"],
+        "notepad": [],
+        "calculator": ["calc"],
+    }
+    websites: dict[str, str] = {
+        "youtube": "https://www.youtube.com",
+        "google": "https://www.google.com",
+        "github": "https://github.com",
+        "gmail": "https://mail.google.com",
+    }
+    folders: dict[str, str] = {
+        "downloads": "~/Downloads",
+        "documents": "~/Documents",
+        "desktop": "~/Desktop",
+        "pictures": "~/Pictures",
+    }
+
+    @field_validator("apps", "websites", "folders")
+    @classmethod
+    def _ids_are_simple(cls, value: dict) -> dict:
+        for key in value:
+            if not _ID.match(key):
+                raise ValueError(f"{key!r}: ids must be lowercase letters, digits or _")
+        return value
+
+    @field_validator("websites")
+    @classmethod
+    def _https_only(cls, value: dict[str, str]) -> dict[str, str]:
+        for name, url in value.items():
+            if not url.startswith("https://") or " " in url:
+                raise ValueError(f"{name!r}: website must be an https:// address")
+        return value
+
+    @model_validator(mode="after")
+    def _no_ambiguous_names(self) -> "CommandsSettings":
+        from drivion.intents.catalog import Catalog
+
+        Catalog(self.apps, self.websites, self.folders)  # raises on a name used twice
+        return self
+
+
 class AppConfig(_Section):
     general: GeneralSettings = GeneralSettings()
     ui: UISettings = UISettings()
     wake_word: WakeWordSettings = WakeWordSettings()
     face: FaceSettings = FaceSettings()
     voice: VoiceSettings = VoiceSettings()
+    commands: CommandsSettings = CommandsSettings()
     llm: LLMSettings = LLMSettings()
 
 

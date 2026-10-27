@@ -41,6 +41,24 @@ tts_rate = 0                # -10 (slow) .. 10 (fast)
 tts_volume = 100            # 0..100
 greeting = "I'm listening." # spoken when the dashboard opens; "" for silence
 
+# The allowlist: the ONLY apps, websites and folders Drivion may open by voice.
+# Each table you include REPLACES the built-in defaults for that table
+# (see docs/COMMANDS.md for the defaults). Ids are lowercase letters, digits or _.
+# A spoken name may only mean one thing; duplicates are rejected at startup.
+#
+# [commands.apps]                    # id = extra spoken names (the id also works)
+# chrome = ["google chrome", "browser"]
+# vscode = ["vs code", "visual studio code"]
+# spotify = ["music"]
+#
+# [commands.websites]                # spoken name = https:// address only
+# youtube = "https://www.youtube.com"
+# university_portal = "https://portal.example.edu"   # say "open university portal"
+#
+# [commands.folders]                 # spoken name = folder path
+# downloads = "~/Downloads"
+# projects = "C:/Users/you/Projects"
+
 [llm]
 provider = "none"           # "none", "openai" or "anthropic"
 model = ""
