@@ -26,6 +26,8 @@ dependencies = [
     # Pinned exactly: Drivion uses its bundled Silero VAD wrapper (faster_whisper.vad).
     "faster-whisper==1.2.1",
     "comtypes>=1.4,<2",
+    # Milestone 7: system actions (master volume via Windows Core Audio).
+    "pycaw>=20240316",
 ]
 
 [project.optional-dependencies]
