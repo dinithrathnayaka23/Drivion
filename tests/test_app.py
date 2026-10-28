@@ -18,7 +18,7 @@ def test_check_config_with_defaults(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code == EXIT_OK
     assert "Configuration OK" in out
-    assert "LLM key configured      : False" in out
+    assert "gemini     key : missing/placeholder" in out
     assert (paths.log_dir() / "drivion.log").exists()
 
 
@@ -32,11 +32,12 @@ def test_invalid_config_exits_with_error_and_no_ui(tmp_path, capsys):
 
 def test_check_config_does_not_print_secret(tmp_path, capsys):
     env = tmp_path / ".env"
-    env.write_text("DRIVION_LLM_API_KEY=very-private-key-123\n", encoding="utf-8")
+    env.write_text("DRIVION_GROQ_API_KEY=very-private-key-123\n", encoding="utf-8")
     main(["--config", str(tmp_path / "none.toml"), "--env-file", str(env), "--check-config"])
     out = capsys.readouterr().out
     assert "very-private-key-123" not in out
-    assert "LLM key configured      : True" in out
+    assert "groq       key : set" in out
+    assert "gemini     key : missing/placeholder" in out
 
 
 def test_data_dir_respects_override(tmp_path, monkeypatch):

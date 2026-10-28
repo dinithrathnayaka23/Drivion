@@ -17,7 +17,7 @@ def test_missing_file_uses_defaults(tmp_path):
     config = load_config(tmp_path / "does-not-exist.toml")
     assert config == AppConfig()
     assert config.face.store_raw_images is False
-    assert config.llm.provider == "none"
+    assert config.llm.providers == ["gemini", "groq", "openrouter"]
 
 
 def test_none_path_uses_defaults():

@@ -70,7 +70,14 @@ confirmation_timeout_s = 15.0  # sleep/restart/shut down wait this long for "yes
 power_delay_s = 10             # restart/shut down happen after this delay; "cancel" stops them
 sleep_method = "sleep"         # "sleep" or "hibernate" (see docs/ACTIONS.md for Modern Standby laptops)
 
+# Cloud AI: used only when the offline parser doesn't understand you, or for
+# questions. Keys go in .env (DRIVION_GEMINI_API_KEY, ...), NEVER here.
 [llm]
-provider = "none"           # "none", "openai" or "anthropic"
-model = ""
-request_timeout_s = 20.0
+enabled = true
+providers = ["gemini", "groq", "openrouter"]   # fallback order; keyless ones are skipped
+gemini_model = "gemini-3.5-flash-lite"
+groq_model = "llama-3.3-70b-versatile"
+openrouter_model = "google/gemma-4-31b-it:free"  # free model ids change; check openrouter.ai/models
+request_timeout_s = 10.0       # per provider, 2..60
+max_answer_tokens = 300
+rate_limit_cooldown_s = 60.0   # skip a rate-limited provider for this long

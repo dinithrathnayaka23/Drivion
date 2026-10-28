@@ -84,8 +84,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Configuration OK")
         print(f"  config file : {args.config if args.config.exists() else '(none, using defaults)'}")
         print(f"  log file    : {log_file}")
-        print(f"  porcupine key configured: {secrets.porcupine_access_key is not None}")
-        print(f"  LLM key configured      : {secrets.llm_api_key is not None}")
+        for provider in config.llm.providers:  # never prints the keys themselves
+            state = "set" if secrets.key_for(provider) is not None else "missing/placeholder"
+            print(f"  {provider:<10} key : {state}")
         print(config.model_dump_json(indent=2))
         return EXIT_OK
 
