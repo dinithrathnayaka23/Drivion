@@ -94,6 +94,17 @@ discarded, so a late "face OK" from a timed-out attempt can't unlock a newer one
 | "Lock Windows" (**Windows lock**) | Lock screen appears | Keeps running | Session locked; you need your Windows password/PIN |
 | "Put my computer to sleep" (**Windows sleep**) | The PC suspends after you confirm | Frozen along with everything else | Low-power state; the mic is off, so the wake word cannot wake the PC |
 
+### AI providers (M8)
+
+`unparsed request or question → LLMAssistant → FallbackChat → ChatProvider (Gemini → Groq → OpenRouter)`.
+All three use the OpenAI-compatible `/chat/completions` API through one stdlib HTTP
+client. Keys come only from `.env` (`Secrets`), and placeholders count as missing. The
+model must answer with `{"action": …}` or `{"answer": …}`. Code validates actions
+against `LLM_ACTIONS` (no confirm, deny, cancel or repeat), `INTENT_ADAPTER` and the
+allowlist. Invalid replies fall back to the next provider. Valid actions still go
+through the `SafeExecutor`. Tests use a fake transport, and `DRIVION_LLM_OFFLINE` blocks
+real HTTP. See [AI.md](AI.md).
+
 ### Actions and safety (M7)
 
 `intent → SafeExecutor → ActionSpec.handler → backend`. The `ActionRegistry` is the
@@ -111,8 +122,8 @@ the test suite always sets. See [ACTIONS.md](ACTIONS.md).
 All intents live in `intents/schemas.py` as one discriminated union (`INTENT_ADAPTER`).
 Open targets must resolve through the allowlist `Catalog` (`[commands]` in the config).
 The responder runs in the command-listener thread. *Go to sleep* posts the same
-`SLEEP_REQUESTED` event as the window button. In Milestone 8 the LLM's output will be
-validated by the same `INTENT_ADAPTER`, so it can only select registered intents. See
+`SLEEP_REQUESTED` event as the window button. The LLM's output (M8) is validated by the
+same `INTENT_ADAPTER`, so it can only select registered intents. See
 [COMMANDS.md](COMMANDS.md).
 
 ### Per-state services (M4, M5)
@@ -147,7 +158,7 @@ draws a static indicator instead.
 | 5 | Speech ✅ | faster-whisper command capture (silence/timeout handling), Windows TTS |
 | 6 | Intents (offline) ✅ | Pydantic intent schemas, rule-based parser with aliases, help/repeat/cancel |
 | 7 | Actions + safety ✅ | Action registry, risk levels, confirmation flow, allowlisted app launch, volume, brightness, lock, screenshot, window control, power actions (confirmed and mocked in tests) |
-| 8 | LLM | Provider interface, one cloud provider, structured intent fallback, general Q&A, network-error handling |
+| 8 | LLM ✅ | Provider interface, Gemini/Groq/OpenRouter with model fallback, structured intent fallback, general Q&A, network-error handling |
 | 9 | Face verification | Consent-based enrollment, YuNet detection + SFace embeddings, encrypted local templates, threshold calibration |
 | 10 | Liveness | Challenge-response (blink/turn head), honest limits documented |
 | 11 | Integration | End-to-end flow, settings dialog, recovery procedures |

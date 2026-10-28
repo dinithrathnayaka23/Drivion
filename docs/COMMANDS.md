@@ -29,7 +29,7 @@ and "Drivion" is ignored at the start and end of a command.
 | `SLEEP_COMPUTER` | "put my computer to sleep", "put the PC into sleep mode" | – (will need confirmation) |
 | `RESTART_COMPUTER` | "restart the computer", "reboot" | – (will need confirmation) |
 | `SHUTDOWN_COMPUTER` | "shut down the computer", "turn off the laptop" | – (will need confirmation) |
-| `ASK_QUESTION` | "what time is it?", "tell me a joke" | the question (AI arrives in Milestone 8) |
+| `ASK_QUESTION` | "who wrote Hamlet?", "tell me a joke" | the question, answered by the AI (see [AI.md](AI.md)) |
 | `GO_TO_SLEEP` | "Drivion, go to sleep", "go to standby", "that's all", "goodbye" | – |
 | `HELP` | "help", "what can you do?" | – |
 | `REPEAT` | "repeat that", "say that again", "what did you say?" | – |
