@@ -47,6 +47,7 @@ class VoiceStatus(StrEnum):
     LISTENING = "LISTENING"        # waiting for you to speak
     HEARING = "HEARING"            # you are speaking
     TRANSCRIBING = "TRANSCRIBING"  # turning speech into text
+    THINKING = "THINKING"          # waiting for the AI provider
     SPEAKING = "SPEAKING"          # Drivion is talking (input is ignored)
 
 

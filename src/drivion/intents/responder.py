@@ -24,6 +24,8 @@ from drivion.core.activity import Outcome
 from drivion.intents import schemas as s
 from drivion.intents.catalog import Catalog
 from drivion.intents.parser import IntentParser, Invalid, NotUnderstood, Understood
+from drivion.llm.assistant import Answer, LLMAssistant
+from drivion.llm.fallback import AllProvidersFailed
 from drivion.safety.executor import NeedsConfirmation, Refused, SafeExecutor
 
 log = logging.getLogger(__name__)
@@ -33,6 +35,9 @@ NOTHING_TO_REPEAT = "I haven't said anything yet."
 NOTHING_TO_CANCEL = "There's nothing to cancel."
 NOTHING_TO_CONFIRM = "There's nothing waiting for a yes or no."
 QUESTION_REPLY = "I can't answer questions yet. That needs an AI provider, which isn't set up."
+NO_AI_KEY_REPLY = ("I can't answer that: no AI service is set up. "
+                   "Add an API key to the .env file.")
+AI_UNREACHABLE_REPLY = "I couldn't reach any AI service right now. Please try again in a moment."
 
 
 class AssistantResponder:
@@ -45,6 +50,8 @@ class AssistantResponder:
         wake_phrase: str,
         executor: SafeExecutor | None = None,
         cancel_scheduled: Callable[[], str | None] = lambda: None,
+        llm: LLMAssistant | None = None,
+        on_thinking: Callable[[], None] = lambda: None,
     ) -> None:
         self._catalog = catalog
         self._parser = IntentParser(catalog)
@@ -52,6 +59,8 @@ class AssistantResponder:
         self._wake_phrase = wake_phrase
         self._executor = executor
         self._cancel_scheduled = cancel_scheduled
+        self._llm = llm
+        self._on_thinking = on_thinking
         self._last_reply: str | None = None
         self._lock = threading.Lock()
 
@@ -74,7 +83,12 @@ class AssistantResponder:
 
     def _respond(self, result) -> tuple[str, Outcome]:
         if isinstance(result, NotUnderstood):
-            return self._after_dropping_pending(NOT_UNDERSTOOD_REPLY, Outcome.REJECTED)
+            if self._llm is None:
+                return self._after_dropping_pending(NOT_UNDERSTOOD_REPLY, Outcome.REJECTED)
+            # Never let an unclear reply count as consent, then ask the AI.
+            note = self._drop_pending("an unrecognised reply was given")
+            reply, outcome = self._ask_ai(result.text)
+            return (f"{note} {reply}" if note else reply), outcome
         if isinstance(result, Invalid):
             return self._after_dropping_pending(result.reason, Outcome.REJECTED)
 
@@ -105,12 +119,33 @@ class AssistantResponder:
             case s.GoToSleep():
                 self._on_go_to_sleep()
                 return f"Going to sleep. Say “{self._wake_phrase}” when you need me.", Outcome.SUCCESS
-            case s.AskQuestion():
-                return QUESTION_REPLY, Outcome.REJECTED
+            case s.AskQuestion(question=question):
+                if self._llm is None:
+                    return QUESTION_REPLY, Outcome.REJECTED
+                return self._ask_ai(question)
         if self._executor is None or not self._executor.handles(intent):
             return (f"I understood: {self.describe(intent)}. I can't control the computer yet.",
                     Outcome.REJECTED)
         return _from_decision(self._executor.request(intent))
+
+    def _ask_ai(self, text: str) -> tuple[str, Outcome]:
+        """The offline parser couldn't help: let the AI pick an allowed action or answer."""
+        if not self._llm.configured:
+            return NO_AI_KEY_REPLY, Outcome.REJECTED
+        self._on_thinking()
+        try:
+            result, provider = self._llm.interpret(text)
+        except AllProvidersFailed as exc:
+            log.warning("No AI reply: %s", exc)
+            if exc.nothing_configured:
+                return NO_AI_KEY_REPLY, Outcome.REJECTED
+            return AI_UNREACHABLE_REPLY, Outcome.FAILED
+        if isinstance(result, Answer):
+            return result.text, Outcome.SUCCESS
+        # A validated, allowlisted action - handled exactly like a spoken command,
+        # so the safety executor still decides (confirmation, authorization).
+        log.info("AI (%s) chose %s", provider, result.intent.model_dump_json())
+        return self._handle(result.intent)
 
     def _confirm(self) -> tuple[str, Outcome]:
         decision = self._executor.confirm() if self._executor else None
@@ -156,6 +191,8 @@ class AssistantResponder:
             text += " For now I understand those commands but can't carry out the computer ones yet."
         else:
             text += " Before sleep, restart or shut down I'll always ask you to confirm."
+        if self._llm is not None and self._llm.configured:
+            text += " You can also ask me general questions."
         return text
 
 
