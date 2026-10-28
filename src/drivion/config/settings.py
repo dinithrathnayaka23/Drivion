@@ -93,10 +93,36 @@ class VoiceSettings(_Section):
     greeting: str = "I'm listening."  # spoken on activation; "" to stay quiet
 
 
+LLMProviderName = Literal["gemini", "groq", "openrouter"]
+
+
 class LLMSettings(_Section):
-    provider: Literal["none", "openai", "anthropic"] = "none"
-    model: str = ""
-    request_timeout_s: float = Field(default=20.0, gt=0.0, le=120.0)
+    """Cloud AI, used only when the offline parser can't handle a request.
+
+    API keys are NOT here: they live in .env (see .env.example).
+    """
+
+    enabled: bool = True
+    # Fallback order: the first provider with a key is tried first.
+    providers: list[LLMProviderName] = ["gemini", "groq", "openrouter"]
+    gemini_model: str = Field(default="gemini-3.5-flash-lite", min_length=1)
+    groq_model: str = Field(default="llama-3.3-70b-versatile", min_length=1)
+    openrouter_model: str = Field(default="google/gemma-4-31b-it:free", min_length=1)
+    # Per provider; a voice assistant shouldn't keep you waiting long.
+    request_timeout_s: float = Field(default=10.0, ge=2.0, le=60.0)
+    max_answer_tokens: int = Field(default=300, ge=50, le=2000)
+    # After a rate limit, skip that provider for this long.
+    rate_limit_cooldown_s: float = Field(default=60.0, ge=0.0, le=3600.0)
+
+    @field_validator("providers")
+    @classmethod
+    def _no_duplicates(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("each provider may appear only once")
+        return value
+
+    def model_for(self, provider: str) -> str:
+        return getattr(self, f"{provider}_model")
 
 
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,31}$")

@@ -84,8 +84,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Configuration OK")
         print(f"  config file : {args.config if args.config.exists() else '(none, using defaults)'}")
         print(f"  log file    : {log_file}")
-        print(f"  porcupine key configured: {secrets.porcupine_access_key is not None}")
-        print(f"  LLM key configured      : {secrets.llm_api_key is not None}")
+        for provider in config.llm.providers:  # never prints the keys themselves
+            state = "set" if secrets.key_for(provider) is not None else "missing/placeholder"
+            print(f"  {provider:<10} key : {state}")
         print(config.model_dump_json(indent=2))
         return EXIT_OK
 
@@ -96,7 +97,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.list_voices:
         return _list_voices()
 
-    return _run_ui(config, simulate=args.simulate)
+    return _run_ui(config, secrets, simulate=args.simulate)
 
 
 def _download_models(config: AppConfig) -> int:
@@ -150,7 +151,7 @@ def _list_audio_devices() -> int:
     return EXIT_OK
 
 
-def _run_ui(config: AppConfig, simulate: bool) -> int:
+def _run_ui(config: AppConfig, secrets, simulate: bool) -> int:
     # Imported here so --check-config and config tests don't load Qt.
     from PySide6.QtWidgets import QApplication
 
@@ -174,12 +175,12 @@ def _run_ui(config: AppConfig, simulate: bool) -> int:
         return EXIT_ALREADY_RUNNING
 
     try:
-        return _run_event_loop(app, config, simulate, name)
+        return _run_event_loop(app, config, secrets, simulate, name)
     finally:
         lock.release()
 
 
-def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
+def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str) -> int:
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QSystemTrayIcon
 
@@ -208,7 +209,8 @@ def _run_event_loop(app, config: AppConfig, simulate: bool, name: str) -> int:
         config, controller, feed, standby_services
     )
     speaker = _build_speaker(config, session_services)
-    processor = _build_command_processor(config, controller, feed, speaker, wake_phrase)
+    processor = _build_command_processor(config, controller, feed, speaker, wake_phrase,
+                                         secrets=secrets)
     voice_input, speech_problem = _register_speech(
         config, controller, feed, speaker, processor, active_services
     )
@@ -343,13 +345,34 @@ def _windows_backends():
                     WindowsPower())
 
 
+def _build_llm(config: AppConfig, secrets, catalog, transport=None):
+    """The AI fallback chain, or None when [llm] enabled = false."""
+    from drivion.llm.assistant import LLMAssistant
+    from drivion.llm.fallback import FallbackChat
+    from drivion.llm.providers import build_providers, urllib_transport
+
+    settings = config.llm
+    if not settings.enabled:
+        log.info("AI provider disabled in config")
+        return None
+    providers = build_providers(settings, secrets, transport or urllib_transport)
+    configured = [p.name for p in providers if p.configured]
+    log.info("AI fallback order: %s (keys set: %s)", " -> ".join(p.name for p in providers),
+             ", ".join(configured) or "none")
+    chat = FallbackChat(providers, settings.request_timeout_s, settings.max_answer_tokens,
+                        settings.rate_limit_cooldown_s)
+    return LLMAssistant(chat, catalog)
+
+
 def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_phrase: str,
-                             backends=None):
+                             backends=None, secrets=None, llm_transport=None):
     """Transcript -> intent -> (safety-checked action) -> reply.
 
     Shared by voice input and the simulation menu. ``backends`` defaults to
-    the real Windows implementations; tests pass fakes.
+    the real Windows implementations and ``llm_transport`` to real HTTP;
+    tests pass fakes. Without ``secrets`` no AI provider is used.
     """
+    from drivion.core.activity import VoiceStatus
     from drivion.actions.handlers import PowerScheduler, build_registry
     from drivion.core.commands import CommandProcessor
     from drivion.core.events import Event, EventType
@@ -381,6 +404,8 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
         wake_phrase=wake_phrase,
         executor=executor,
         cancel_scheduled=power.cancel,
+        llm=_build_llm(config, secrets, catalog, llm_transport) if secrets is not None else None,
+        on_thinking=lambda: feed.set_voice_status(VoiceStatus.THINKING),
     )
     return CommandProcessor(feed, speaker, responder)
 

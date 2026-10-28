@@ -3,14 +3,15 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 7 (actions and safety).** Drivion runs as a tray app with an
-> animated dashboard. In standby it listens for a wake word. While active it understands
-> spoken commands offline and **carries them out**: volume, brightness, allowlisted apps,
-> websites and folders, minimize/restore, screenshots, lock, and sleep, restart or shut
-> down (only after you confirm). Face verification and AI aren't built yet; a developer
-> menu (`--simulate`) fakes verification. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-> [docs/WAKE_WORD.md](docs/WAKE_WORD.md), [docs/SPEECH.md](docs/SPEECH.md),
-> [docs/COMMANDS.md](docs/COMMANDS.md) and [docs/ACTIONS.md](docs/ACTIONS.md).
+> **Status: Milestone 8 (AI providers).** Drivion runs as a tray app with an animated
+> dashboard. In standby it listens for a wake word. While active it understands spoken
+> commands offline and carries them out through a safety layer: volume, brightness,
+> allowlisted apps, websites and folders, screenshots, lock, and sleep, restart or shut
+> down (only after you confirm). Questions and free-form requests go to a cloud AI, with
+> fallback between Gemini, Groq and OpenRouter. The AI can only pick allowed actions.
+> Face verification isn't built yet; a developer menu (`--simulate`) fakes it. See
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/COMMANDS.md](docs/COMMANDS.md),
+> [docs/ACTIONS.md](docs/ACTIONS.md) and [docs/AI.md](docs/AI.md).
 
 ## Requirements
 
@@ -57,6 +58,12 @@ Copy-Item .env.example .env
 
 Every setting is optional. Invalid values (for example `sensitivity = 1.5`) or unknown
 keys stop Drivion at startup with a message that names the bad setting.
+
+**AI keys (optional).** In `.env`, replace the placeholders for any of
+`DRIVION_GEMINI_API_KEY`, `DRIVION_GROQ_API_KEY` and `DRIVION_OPENROUTER_API_KEY`. One is
+enough; with several, Drivion falls back between them. Keys only ever go in `.env`, never
+in `settings.toml` or the code. Run `drivion --check-config` to see which keys are
+detected; it never prints the keys. See [docs/AI.md](docs/AI.md).
 
 Logs are written to `%LOCALAPPDATA%\Drivion\logs\drivion.log`. API keys are redacted
 from log output.
@@ -121,7 +128,8 @@ are skipped until you run `drivion --download-models`.
 | Speech-to-text (faster-whisper) | Only for the one-time `--download-models` |
 | Spoken replies (Windows voices) | No |
 | Face verification | Only for the first model download |
-| General questions (cloud LLM) | Yes |
+| Simple commands (volume, apps, lock, ...) | No: understood and carried out on your PC |
+| Questions and free-form requests (Gemini, Groq, OpenRouter) | Yes, plus at least one API key in `.env` |
 
 ## Troubleshooting
 
@@ -139,6 +147,11 @@ are skipped until you run `drivion --download-models`.
   error* in the tray.
 - **The wake word never triggers:** run `drivion --list-audio-devices`, set
   `wake_word.input_device` to your microphone, or raise `wake_word.sensitivity`.
+- **"No AI service is set up":** put a real key in `.env` (not the `your-...` placeholder),
+  then restart Drivion. `drivion --check-config` shows which keys are detected.
+- **"I couldn't reach any AI service":** check your internet connection. The log
+  (`drivion.log`) says why each provider failed: a rejected key, a rate limit, a timeout,
+  or an unknown model name. In the last case, update the model under `[llm]`.
 - **"Voice commands unavailable":** run `drivion --download-models` (needed again if you
   change `voice.stt_model`).
 - **Background noise becomes a "command", or I get cut off:** raise

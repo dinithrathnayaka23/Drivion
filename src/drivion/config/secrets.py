@@ -7,10 +7,16 @@ only at the exact point where the key is handed to the provider's SDK.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Values like "your-gemini-api-key-here", "<key>", "changeme" are placeholders,
+# not keys: treat them as missing instead of sending them to a provider.
+_PLACEHOLDER = re.compile(r"^(?:your[-_ ]|replace|changeme|change[-_]me|xxx|<|placeholder|todo)",
+                          re.IGNORECASE)
 
 
 class Secrets(BaseSettings):
@@ -22,15 +28,20 @@ class Secrets(BaseSettings):
     )
 
     porcupine_access_key: SecretStr | None = None
-    llm_api_key: SecretStr | None = None
+    # AI providers, tried in the order set by [llm] providers in settings.toml.
+    gemini_api_key: SecretStr | None = None
+    groq_api_key: SecretStr | None = None
+    openrouter_api_key: SecretStr | None = None
 
     @field_validator("*", mode="before")
     @classmethod
-    def _blank_is_missing(cls, value: object) -> object:
-        # ".env.example" ships with empty values; treat them as "not configured".
-        if isinstance(value, str) and not value.strip():
+    def _blank_or_placeholder_is_missing(cls, value: object) -> object:
+        if isinstance(value, str) and (not value.strip() or _PLACEHOLDER.match(value.strip())):
             return None
         return value
+
+    def key_for(self, provider: str) -> SecretStr | None:
+        return getattr(self, f"{provider}_api_key", None)
 
     def values(self) -> list[str]:
         """Return the raw secret strings, used only by the log redaction filter."""

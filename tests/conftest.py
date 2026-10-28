@@ -20,6 +20,8 @@ def isolated_env(tmp_path, monkeypatch):
     # Never sleep, restart or shut down the computer from a test, even by accident:
     # the real power backend refuses to act while this is set.
     monkeypatch.setenv("DRIVION_POWER_DRY_RUN", "1")
+    # Never call a real AI provider from a test: no network, no quota spent.
+    monkeypatch.setenv("DRIVION_LLM_OFFLINE", "1")
     yield
     root = logging.getLogger()
     for handler in list(root.handlers):

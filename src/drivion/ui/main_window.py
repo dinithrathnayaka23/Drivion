@@ -47,6 +47,7 @@ _ACTIVE_VOICE_TEXT = {
     VoiceStatus.LISTENING: "Listening for commands",
     VoiceStatus.HEARING: "Hearing you…",
     VoiceStatus.TRANSCRIBING: "Working out what you said…",
+    VoiceStatus.THINKING: "Thinking…",
     VoiceStatus.SPEAKING: "Speaking…",
 }
 
