@@ -39,6 +39,7 @@ class AssistantController(QObject):
         services: ServiceManager | None = None,
         standby_services: ServiceManager | None = None,
         active_services: ServiceManager | None = None,
+        verifying_services: ServiceManager | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -51,6 +52,8 @@ class AssistantController(QObject):
         self._scoped_services: dict[AppState, ServiceManager] = {
             AppState.STANDBY: standby_services or ServiceManager(),
             AppState.ACTIVE: active_services or ServiceManager(),
+            # Face verification: the camera is open only while VERIFYING.
+            AppState.VERIFYING: verifying_services or ServiceManager(),
         }
         self._attempt = 0
 
@@ -146,7 +149,8 @@ class AssistantController(QObject):
             return
         self._verification_timer.stop()
         self._machine.transition(AppState.STANDBY, f"verification failed: {event.detail}")
-        self.notification.emit("Access denied", "Face verification failed. Back to standby.")
+        reason = f": {event.detail}" if event.detail else ""
+        self.notification.emit("Access denied", f"Face verification failed{reason}. Back to standby.")
 
     def _on_verification_timeout(self) -> None:
         if self.state is not AppState.VERIFYING:
