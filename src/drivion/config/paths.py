@@ -29,3 +29,8 @@ def log_dir() -> Path:
 
 def models_dir() -> Path:
     return data_dir() / "models"
+
+
+def face_dir() -> Path:
+    """Encrypted face templates. Never inside the repository."""
+    return data_dir() / "face"
