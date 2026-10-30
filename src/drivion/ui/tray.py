@@ -29,7 +29,8 @@ class TrayIcon(QSystemTrayIcon):
     simulate_toggle_microphone = Signal()
     simulate_toggle_camera = Signal()
 
-    def __init__(self, simulate: bool = False, simulate_microphone: bool = True) -> None:
+    def __init__(self, simulate: bool = False, simulate_microphone: bool = True,
+                 simulate_camera: bool = True) -> None:
         super().__init__()
         self._menu = QMenu()
 
@@ -52,8 +53,9 @@ class TrayIcon(QSystemTrayIcon):
                 ("microphone", "Toggle microphone indicator", self.simulate_toggle_microphone),
                 ("camera", "Toggle camera indicator", self.simulate_toggle_camera),
             ]:
-                if key == "microphone" and not simulate_microphone:
-                    continue  # the real microphone is reported; don't fake it
+                if (key == "microphone" and not simulate_microphone) or (
+                        key == "camera" and not simulate_camera):
+                    continue  # the real device is reported; don't fake it
                 action = sim.addAction(label)
                 action.triggered.connect(signal)
                 self.simulation_actions[key] = action
