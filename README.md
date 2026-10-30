@@ -3,15 +3,15 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 8 (AI providers).** Drivion runs as a tray app with an animated
-> dashboard. In standby it listens for a wake word. While active it understands spoken
-> commands offline and carries them out through a safety layer: volume, brightness,
-> allowlisted apps, websites and folders, screenshots, lock, and sleep, restart or shut
-> down (only after you confirm). Questions and free-form requests go to a cloud AI, with
-> fallback between Gemini, Groq and OpenRouter. The AI can only pick allowed actions.
-> Face verification isn't built yet; a developer menu (`--simulate`) fakes it. See
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/COMMANDS.md](docs/COMMANDS.md),
-> [docs/ACTIONS.md](docs/ACTIONS.md) and [docs/AI.md](docs/AI.md).
+> **Status: Milestone 9 (face verification).** Drivion runs as a tray app with an
+> animated dashboard. In standby it listens for a wake word, then **checks your face**
+> (local, encrypted templates) before opening the dashboard. While active it understands
+> spoken commands offline and carries them out through a safety layer (sleep, restart and
+> shut down only after you confirm). Questions go to a cloud AI, with fallback between
+> Gemini, Groq and OpenRouter. Liveness checks (against photos) are Milestone 10. See
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/FACE.md](docs/FACE.md),
+> [docs/COMMANDS.md](docs/COMMANDS.md), [docs/ACTIONS.md](docs/ACTIONS.md) and
+> [docs/AI.md](docs/AI.md).
 
 ## Requirements
 
@@ -40,6 +40,14 @@ revision):
 
 ```powershell
 drivion --download-models
+```
+
+Then enroll your face. The window asks for your consent first, and stores encrypted
+templates, not photos. See [docs/FACE.md](docs/FACE.md).
+
+```powershell
+drivion --enroll-face
+drivion --test-face        # optional: live match score vs the threshold
 ```
 
 ## Configuration
@@ -85,9 +93,11 @@ blue = standby, amber = verifying, cyan = active, red = error.
   until you train "Wake up, Drivion"; see [docs/WAKE_WORD.md](docs/WAKE_WORD.md)). While
   it listens, the microphone chip is on. Saying the phrase starts face verification, and
   the microphone is released straight away.
-- **Open Drivion** (tray click or menu) also starts face verification. Real verification
-  arrives in Milestone 9; until then nothing answers, so after
-  `face.verification_timeout_s` seconds Drivion **fails closed** and returns to standby.
+- **Face verification:** after the wake word, or **Open Drivion** in the tray, the camera
+  turns on and the icon turns amber. Look at the camera. Three matching frames open the
+  dashboard and switch the camera off. Anything else, such as a stranger, no face, two
+  faces, poor light or no enrollment, gives *"Access denied: <reason>"* and Drivion returns
+  to standby (**fail closed**).
 - With `--simulate`, use *Simulate → Wake word detected*, then *Face verified*, to reach
   **ACTIVE** and open the dashboard.
 - **Voice commands:** when the dashboard opens, Drivion says *"I'm listening."* Say
@@ -127,7 +137,7 @@ are skipped until you run `drivion --download-models`.
 | Wake word (openWakeWord) | Only for the one-time `--download-models` |
 | Speech-to-text (faster-whisper) | Only for the one-time `--download-models` |
 | Spoken replies (Windows voices) | No |
-| Face verification | Only for the first model download |
+| Face verification (OpenCV YuNet + SFace) | Only for the one-time `--download-models` |
 | Simple commands (volume, apps, lock, ...) | No: understood and carried out on your PC |
 | Questions and free-form requests (Gemini, Groq, OpenRouter) | Yes, plus at least one API key in `.env` |
 
@@ -152,6 +162,13 @@ are skipped until you run `drivion --download-models`.
 - **"I couldn't reach any AI service":** check your internet connection. The log
   (`drivion.log`) says why each provider failed: a rejected key, a rate limit, a timeout,
   or an unknown model name. In the last case, update the model under `[llm]`.
+- **"Access denied: face not recognised":** enroll again in good, even light
+  (`drivion --enroll-face`), and check your score with `drivion --test-face`.
+- **"Access denied: the camera isn't available":** close other apps that use the camera,
+  and check *Settings → Privacy & security → Camera → Let desktop apps access your
+  camera*.
+- **"Face verification not ready":** run `drivion --download-models` and
+  `drivion --enroll-face`.
 - **"Voice commands unavailable":** run `drivion --download-models` (needed again if you
   change `voice.stt_model`).
 - **Background noise becomes a "command", or I get cut off:** raise

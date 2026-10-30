@@ -94,6 +94,16 @@ discarded, so a late "face OK" from a timed-out attempt can't unlock a newer one
 | "Lock Windows" (**Windows lock**) | Lock screen appears | Keeps running | Session locked; you need your Windows password/PIN |
 | "Put my computer to sleep" (**Windows sleep**) | The PC suspends after you confirm | Frozen along with everything else | Low-power state; the mic is off, so the wake word cannot wake the PC |
 
+### Face verification (M9)
+
+`VERIFYING → FaceVerificationService (camera on) → YuNet detect → quality checks → SFace
+embedding → best cosine vs DPAPI-encrypted templates → VERIFICATION_SUCCEEDED/FAILED
+(attempt id, reason) → camera off`. The service is scoped to VERIFYING like the listeners.
+It needs 3 matching frames and more matches than unknowns, rejects early after 6
+unknown-face frames, and skips poor-quality frames. The 0.55 threshold was measured on the
+ORL face database (no impostor above 0.466, no genuine attempt below 0.575). An RGB webcam
+can't detect photos or video, which liveness (M10) addresses. See [FACE.md](FACE.md).
+
 ### AI providers (M8)
 
 `unparsed request or question → LLMAssistant → FallbackChat → ChatProvider (Gemini → Groq → OpenRouter)`.
@@ -159,7 +169,7 @@ draws a static indicator instead.
 | 6 | Intents (offline) ✅ | Pydantic intent schemas, rule-based parser with aliases, help/repeat/cancel |
 | 7 | Actions + safety ✅ | Action registry, risk levels, confirmation flow, allowlisted app launch, volume, brightness, lock, screenshot, window control, power actions (confirmed and mocked in tests) |
 | 8 | LLM ✅ | Provider interface, Gemini/Groq/OpenRouter with model fallback, structured intent fallback, general Q&A, network-error handling |
-| 9 | Face verification | Consent-based enrollment, YuNet detection + SFace embeddings, encrypted local templates, threshold calibration |
+| 9 | Face verification ✅ | Consent-based enrollment, YuNet detection + SFace embeddings, encrypted local templates, threshold calibration |
 | 10 | Liveness | Challenge-response (blink/turn head), honest limits documented |
 | 11 | Integration | End-to-end flow, settings dialog, recovery procedures |
 | 12 | Packaging | PyInstaller build, startup at login (Task Scheduler), final README |
