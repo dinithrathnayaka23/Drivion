@@ -68,11 +68,19 @@ class WakeWordSettings(_Section):
 
 
 class FaceSettings(_Section):
-    similarity_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
-    store_raw_images: bool = False
+    # Cosine similarity a frame must reach to count as you. 0.55 was chosen by
+    # measurement (docs/FACE.md): on the ORL face database no impostor scored
+    # above 0.466 and no genuine attempt below 0.575. Check yours with
+    # `drivion --test-face`. Below 0.45 strangers start to be accepted.
+    similarity_threshold: float = Field(default=0.55, ge=0.3, le=0.95)
+    # Matching frames needed before access is granted (more = stricter, slower).
+    required_matches: int = Field(default=3, ge=1, le=10)
+    enroll_samples: int = Field(default=8, ge=3, le=20)
+    camera_index: int = Field(default=0, ge=0, le=9)
+    store_raw_images: bool = False  # true = also keep encrypted aligned face crops
     liveness_mode: Literal["none", "blink", "challenge"] = "challenge"
     # How long to wait for a verification result before failing closed.
-    verification_timeout_s: float = Field(default=10.0, ge=1.0, le=60.0)
+    verification_timeout_s: float = Field(default=10.0, ge=4.0, le=60.0)
 
 
 class VoiceSettings(_Section):

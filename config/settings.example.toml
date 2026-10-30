@@ -22,10 +22,13 @@ cooldown_s = 2.0            # ignore repeat detections for this many seconds
 # input_device = "Microphone Array"  # index or part of the name; see `drivion --list-audio-devices`
 
 [face]
-similarity_threshold = 0.6  # 0.0..1.0, calibrated during the face milestone
-store_raw_images = false    # keep enrollment photos? false = templates only
-liveness_mode = "challenge" # "none", "blink" or "challenge"
-verification_timeout_s = 10.0  # 1..60; no result in time = access denied
+similarity_threshold = 0.55 # 0.3..0.95; measured, see docs/FACE.md. Check yours: drivion --test-face
+required_matches = 3        # matching frames needed to unlock (1..10; more = stricter)
+enroll_samples = 8          # face samples taken when enrolling (3..20)
+camera_index = 0            # 0 = default webcam
+store_raw_images = false    # true = also keep small aligned face crops (encrypted)
+liveness_mode = "challenge" # "none", "blink" or "challenge" (Milestone 10)
+verification_timeout_s = 10.0  # 4..60; no result in time = access denied
 
 [voice]
 enabled = true              # listen for spoken commands while the dashboard is open

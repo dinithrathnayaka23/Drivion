@@ -28,6 +28,8 @@ dependencies = [
     "comtypes>=1.4,<2",
     # Milestone 7: system actions (master volume via Windows Core Audio).
     "pycaw>=20240316",
+    # Milestone 9: face detection (YuNet) and recognition (SFace), built into OpenCV.
+    "opencv-python>=4.10,<5",
 ]
 
 [project.optional-dependencies]

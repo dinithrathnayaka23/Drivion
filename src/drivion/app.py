@@ -51,8 +51,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--download-models", action="store_true",
-        help="download and verify the wake-word and speech models, then exit",
+        help="download and verify the wake-word, speech and face models, then exit",
     )
+    face = parser.add_argument_group("face verification")
+    face.add_argument("--enroll-face", action="store_true",
+                      help="enroll your face (asks for consent first), then exit")
+    face.add_argument("--test-face", action="store_true",
+                      help="show live match scores against your enrolled face, then exit")
+    face.add_argument("--delete-face", action="store_true",
+                      help="delete all stored face data, then exit")
+    face.add_argument("--yes", action="store_true", help="don't ask for confirmation (with --delete-face)")
     parser.add_argument(
         "--list-voices", action="store_true",
         help="list installed Windows voices (for voice.tts_voice), then exit",
@@ -96,8 +104,61 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _list_audio_devices()
     if args.list_voices:
         return _list_voices()
+    if args.delete_face:
+        return _delete_face(confirmed=args.yes)
+    if args.enroll_face or args.test_face:
+        return _face_dialog(config, "enroll" if args.enroll_face else "test")
 
     return _run_ui(config, secrets, simulate=args.simulate)
+
+
+def _face_store():
+    from drivion.vision.templates import TemplateStore
+
+    return TemplateStore(paths.face_dir())
+
+
+def _face_dialog(config: AppConfig, mode: str) -> int:
+    from PySide6.QtWidgets import QApplication
+
+    from drivion.ui.enrollment import CaptureWorker, FaceDialog
+    from drivion.vision.camera import OpenCVCamera
+    from drivion.vision.faces import OpenCVFaceAnalyzer
+    from drivion.vision.verification import EnrollSettings
+
+    face = config.face
+    store = _face_store()
+    if mode == "test" and not store.exists():
+        print("No face is enrolled yet. Run `drivion --enroll-face` first.", file=sys.stderr)
+        return EXIT_ERROR
+    app = QApplication.instance() or QApplication(sys.argv)
+    worker = CaptureWorker(
+        source_factory=lambda: OpenCVCamera(face.camera_index),
+        analyzer_factory=lambda: OpenCVFaceAnalyzer(paths.models_dir()),
+        store=store, mode=mode, threshold=face.similarity_threshold,
+        settings=EnrollSettings(samples=face.enroll_samples), keep_crops=face.store_raw_images,
+    )
+    dialog = FaceDialog(worker, already_enrolled=store.exists(), keep_crops=face.store_raw_images)
+    dialog.show()
+    app.exec()
+    if mode == "enroll":
+        print("Face enrolled." if dialog.succeeded else "Face enrollment did not complete.")
+    return EXIT_OK if dialog.succeeded else EXIT_ERROR
+
+
+def _delete_face(confirmed: bool) -> int:
+    store = _face_store()
+    if not store.exists():
+        print("No face data is stored.")
+        return EXIT_OK
+    if not confirmed:
+        answer = input(f"Delete all face data in {store.directory}? Type DELETE to confirm: ")
+        if answer.strip() != "DELETE":
+            print("Nothing was deleted.")
+            return EXIT_ERROR
+    store.delete()
+    print("Face data deleted. Drivion can't unlock until you enroll again.")
+    return EXIT_OK
 
 
 def _download_models(config: AppConfig) -> int:
@@ -121,6 +182,16 @@ def _download_models(config: AppConfig) -> int:
         print(f"Download failed: {exc}", file=sys.stderr)
         return EXIT_ERROR
     print(f"Speech model {name}: ready.")
+
+    from drivion.vision.faces import FACE_MODELS
+
+    print("Downloading face models (OpenCV YuNet + SFace) ...")
+    try:
+        written = download_models(target, FACE_MODELS, timeout_s=120)
+    except ModelDownloadError as exc:
+        print(f"Download failed: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Face models: {len(written)} downloaded, all files verified.")
     return EXIT_OK
 
 
@@ -197,11 +268,13 @@ def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str) 
     session_services = ServiceManager()
     standby_services = ServiceManager()
     active_services = ServiceManager()
+    verifying_services = ServiceManager()
     controller = AssistantController(
         config.face.verification_timeout_s,
         services=session_services,
         standby_services=standby_services,
         active_services=active_services,
+        verifying_services=verifying_services,
     )
     feed = ActivityFeed(history_limit=config.ui.history_limit)
 
@@ -214,6 +287,7 @@ def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str) 
     voice_input, speech_problem = _register_speech(
         config, controller, feed, speaker, processor, active_services
     )
+    face_problem = _register_face(config, controller, feed, verifying_services)
 
     def greet_on_activation(transition) -> None:
         if transition.new is AppState.ACTIVE and config.voice.greeting:
@@ -223,7 +297,8 @@ def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str) 
 
     tray = None
     if QSystemTrayIcon.isSystemTrayAvailable():
-        tray = TrayIcon(simulate=simulate, simulate_microphone=not (listening or voice_input))
+        tray = TrayIcon(simulate=simulate, simulate_microphone=not (listening or voice_input),
+                        simulate_camera=False)  # the real camera is reported
     else:
         log.warning("No system tray available; the window will stay visible instead")
     window = MainWindow(
@@ -257,6 +332,8 @@ def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str) 
         controller.notification.emit("Wake word unavailable", wake_word_problem)
     if speech_problem:
         controller.notification.emit("Voice commands unavailable", speech_problem)
+    if face_problem:
+        controller.notification.emit("Face verification not ready", face_problem)
     log.info("Drivion running (state %s, simulation %s)", controller.state,
              "on" if simulate else "off")
     # Runs once the event loop is actually processing events, i.e. when a
@@ -319,6 +396,51 @@ def _register_wake_word(
 
 
 TIMEOUT_REPLY = "I didn't hear a command, so I'm going back to standby."
+
+
+def _register_face(config: AppConfig, controller, feed, verifying_services) -> str | None:
+    """Register face verification for VERIFYING. Returns a setup problem to report, if any.
+
+    The service is registered even when models or enrollment are missing: it
+    then fails each attempt straight away *with the reason*, which is clearer
+    than a silent timeout. Either way access is denied (fail closed).
+    """
+    from drivion.audio.models import is_valid
+    from drivion.core.activity import Device
+    from drivion.core.events import Event, EventType
+    from drivion.vision.camera import OpenCVCamera
+    from drivion.vision.faces import FACE_MODELS, OpenCVFaceAnalyzer
+    from drivion.vision.service import REPORT_MARGIN_S, FaceVerificationService
+    from drivion.vision.verification import VerifySettings
+
+    face = config.face
+    store = _face_store()
+
+    def report(attempt, result) -> None:
+        kind = EventType.VERIFICATION_SUCCEEDED if result.verified else EventType.VERIFICATION_FAILED
+        controller.post_event(Event(kind, "face", result.reason, attempt=attempt))
+
+    verifying_services.register(FaceVerificationService(
+        source_factory=lambda: OpenCVCamera(face.camera_index),
+        analyzer_factory=lambda: OpenCVFaceAnalyzer(paths.models_dir()),
+        store=store,
+        settings=VerifySettings(
+            threshold=face.similarity_threshold,
+            required_matches=face.required_matches,
+            timeout_s=face.verification_timeout_s - REPORT_MARGIN_S,
+        ),
+        current_attempt=lambda: controller.verification_attempt,
+        on_result=report,
+        on_camera=lambda state: feed.set_device(Device.CAMERA, state),
+    ))
+    if face.liveness_mode != "none":
+        log.warning("Liveness checks aren't implemented yet (Milestone 10): face matching alone "
+                    "can't tell a live face from a photo")
+    if not all(is_valid(paths.models_dir(), m) for m in FACE_MODELS):
+        return "Face models are missing. Run `drivion --download-models`."
+    if not store.exists():
+        return "No face is enrolled. Run `drivion --enroll-face`."
+    return None
 
 
 def _build_speaker(config: AppConfig, session_services):
