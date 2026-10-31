@@ -102,7 +102,9 @@ embedding → best cosine vs DPAPI-encrypted templates → VERIFICATION_SUCCEEDE
 It needs 3 matching frames and more matches than unknowns, rejects early after 6
 unknown-face frames, and skips poor-quality frames. The 0.55 threshold was measured on the
 ORL face database (no impostor above 0.466, no genuine attempt below 0.575). An RGB webcam
-can't detect photos or video, which liveness (M10) addresses. See [FACE.md](FACE.md).
+can't detect photos or video on its own, so after a match `vision/liveness.py` runs random
+head turns (signed nose offset, which a tilted photo barely changes) and a final frontal
+match, all within `FaceSettings.total_timeout_s`. See [FACE.md](FACE.md).
 
 ### AI providers (M8)
 
@@ -170,7 +172,7 @@ draws a static indicator instead.
 | 7 | Actions + safety ✅ | Action registry, risk levels, confirmation flow, allowlisted app launch, volume, brightness, lock, screenshot, window control, power actions (confirmed and mocked in tests) |
 | 8 | LLM ✅ | Provider interface, Gemini/Groq/OpenRouter with model fallback, structured intent fallback, general Q&A, network-error handling |
 | 9 | Face verification ✅ | Consent-based enrollment, YuNet detection + SFace embeddings, encrypted local templates, threshold calibration |
-| 10 | Liveness | Challenge-response (blink/turn head), honest limits documented |
+| 10 | Liveness ✅ | Random head-turn challenges, honest limits documented |
 | 11 | Integration | End-to-end flow, settings dialog, recovery procedures |
 | 12 | Packaging | PyInstaller build, startup at login (Task Scheduler), final README |
 
