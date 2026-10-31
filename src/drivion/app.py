@@ -56,6 +56,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     face = parser.add_argument_group("face verification")
     face.add_argument("--enroll-face", action="store_true",
                       help="enroll your face (asks for consent first), then exit")
+    face.add_argument("--test-liveness", action="store_true",
+                      help="try the head-turn liveness check with a preview, then exit")
     face.add_argument("--test-face", action="store_true",
                       help="show live match scores against your enrolled face, then exit")
     face.add_argument("--delete-face", action="store_true",
@@ -106,8 +108,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _list_voices()
     if args.delete_face:
         return _delete_face(confirmed=args.yes)
-    if args.enroll_face or args.test_face:
-        return _face_dialog(config, "enroll" if args.enroll_face else "test")
+    if args.enroll_face or args.test_face or args.test_liveness:
+        mode = "enroll" if args.enroll_face else "test" if args.test_face else "liveness"
+        return _face_dialog(config, mode)
 
     return _run_ui(config, secrets, simulate=args.simulate)
 
@@ -128,7 +131,7 @@ def _face_dialog(config: AppConfig, mode: str) -> int:
 
     face = config.face
     store = _face_store()
-    if mode == "test" and not store.exists():
+    if mode != "enroll" and not store.exists():
         print("No face is enrolled yet. Run `drivion --enroll-face` first.", file=sys.stderr)
         return EXIT_ERROR
     app = QApplication.instance() or QApplication(sys.argv)
@@ -137,6 +140,7 @@ def _face_dialog(config: AppConfig, mode: str) -> int:
         analyzer_factory=lambda: OpenCVFaceAnalyzer(paths.models_dir()),
         store=store, mode=mode, threshold=face.similarity_threshold,
         settings=EnrollSettings(samples=face.enroll_samples), keep_crops=face.store_raw_images,
+        liveness=_liveness_settings(face),
     )
     dialog = FaceDialog(worker, already_enrolled=store.exists(), keep_crops=face.store_raw_images)
     dialog.show()
@@ -270,7 +274,7 @@ def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str) 
     active_services = ServiceManager()
     verifying_services = ServiceManager()
     controller = AssistantController(
-        config.face.verification_timeout_s,
+        config.face.total_timeout_s,
         services=session_services,
         standby_services=standby_services,
         active_services=active_services,
@@ -287,7 +291,7 @@ def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str) 
     voice_input, speech_problem = _register_speech(
         config, controller, feed, speaker, processor, active_services
     )
-    face_problem = _register_face(config, controller, feed, verifying_services)
+    face_problem = _register_face(config, controller, feed, speaker, verifying_services)
 
     def greet_on_activation(transition) -> None:
         if transition.new is AppState.ACTIVE and config.voice.greeting:
@@ -398,7 +402,17 @@ def _register_wake_word(
 TIMEOUT_REPLY = "I didn't hear a command, so I'm going back to standby."
 
 
-def _register_face(config: AppConfig, controller, feed, verifying_services) -> str | None:
+def _liveness_settings(face):
+    from drivion.vision.liveness import LivenessSettings
+
+    return LivenessSettings(
+        threshold=face.similarity_threshold, challenges=face.liveness_challenges,
+        timeout_s=face.liveness_timeout_s, turn_delta=face.liveness_turn,
+        mirrored=face.camera_mirrored,
+    )
+
+
+def _register_face(config: AppConfig, controller, feed, speaker, verifying_services) -> str | None:
     """Register face verification for VERIFYING. Returns a setup problem to report, if any.
 
     The service is registered even when models or enrollment are missing: it
@@ -420,6 +434,10 @@ def _register_face(config: AppConfig, controller, feed, verifying_services) -> s
         kind = EventType.VERIFICATION_SUCCEEDED if result.verified else EventType.VERIFICATION_FAILED
         controller.post_event(Event(kind, "face", result.reason, attempt=attempt))
 
+    def prompt(text: str) -> None:  # the dashboard is closed during verification
+        speaker.say(text)
+        controller.notification.emit("Liveness check", text)
+
     verifying_services.register(FaceVerificationService(
         source_factory=lambda: OpenCVCamera(face.camera_index),
         analyzer_factory=lambda: OpenCVFaceAnalyzer(paths.models_dir()),
@@ -432,10 +450,11 @@ def _register_face(config: AppConfig, controller, feed, verifying_services) -> s
         current_attempt=lambda: controller.verification_attempt,
         on_result=report,
         on_camera=lambda state: feed.set_device(Device.CAMERA, state),
+        liveness=_liveness_settings(face) if face.liveness_mode == "challenge" else None,
+        on_prompt=prompt,
     ))
-    if face.liveness_mode != "none":
-        log.warning("Liveness checks aren't implemented yet (Milestone 10): face matching alone "
-                    "can't tell a live face from a photo")
+    if face.liveness_mode == "none":
+        log.warning("Liveness is off: a photo or video of you could unlock Drivion")
     if not all(is_valid(paths.models_dir(), m) for m in FACE_MODELS):
         return "Face models are missing. Run `drivion --download-models`."
     if not store.exists():
