@@ -78,9 +78,24 @@ class FaceSettings(_Section):
     enroll_samples: int = Field(default=8, ge=3, le=20)
     camera_index: int = Field(default=0, ge=0, le=9)
     store_raw_images: bool = False  # true = also keep encrypted aligned face crops
-    liveness_mode: Literal["none", "blink", "challenge"] = "challenge"
-    # How long to wait for a verification result before failing closed.
+    # "challenge" asks for random head turns after the face match; "none" turns
+    # that off, and then a photo of you can unlock Drivion (see docs/FACE.md).
+    liveness_mode: Literal["none", "challenge"] = "challenge"
+    liveness_challenges: int = Field(default=2, ge=1, le=4)
+    liveness_timeout_s: float = Field(default=6.0, ge=3.0, le=15.0)  # for each head turn
+    # Required change in head turn. 0.30 is over twice what tilting a photo gave (0.126).
+    liveness_turn: float = Field(default=0.30, ge=0.2, le=0.6)
+    camera_mirrored: bool = False  # set true if "turn left" is always seen as right
+    # How long to wait for a face match before failing closed.
     verification_timeout_s: float = Field(default=10.0, ge=4.0, le=60.0)
+
+    @property
+    def total_timeout_s(self) -> float:
+        """Upper limit for a whole attempt: face match, turns and the final match."""
+        if self.liveness_mode == "none":
+            return self.verification_timeout_s
+        steps = 2 * self.liveness_challenges + 2  # baseline, each centre + turn, final match
+        return self.verification_timeout_s + steps * self.liveness_timeout_s
 
 
 class VoiceSettings(_Section):
