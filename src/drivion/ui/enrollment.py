@@ -31,7 +31,8 @@ from PySide6.QtWidgets import (
 from drivion.ui import theme
 from drivion.vision.camera import CameraError, FrameSource
 from drivion.vision.faces import FaceAnalyzer, FaceModelsUnavailable, best_similarity
-from drivion.vision.quality import GUIDANCE, FrameIssue, assess
+from drivion.vision.liveness import LivenessSettings, pick_challenges, run_challenges
+from drivion.vision.quality import GUIDANCE, FrameIssue, assess, signed_yaw
 from drivion.vision.templates import FaceTemplates, TemplateError, TemplateStore
 from drivion.vision.verification import EnrollSettings, Enrollment
 
@@ -79,7 +80,8 @@ class CaptureWorker(QObject):
 
     def __init__(self, source_factory: Callable[[], FrameSource],
                  analyzer_factory: Callable[[], FaceAnalyzer], store: TemplateStore,
-                 mode: str, threshold: float, settings: EnrollSettings, keep_crops: bool) -> None:
+                 mode: str, threshold: float, settings: EnrollSettings, keep_crops: bool,
+                 liveness: LivenessSettings | None = None) -> None:
         super().__init__()
         self._source_factory = source_factory
         self._analyzer_factory = analyzer_factory
@@ -88,6 +90,7 @@ class CaptureWorker(QObject):
         self._threshold = threshold
         self._settings = settings
         self._keep_crops = keep_crops
+        self._liveness = liveness
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -104,7 +107,7 @@ class CaptureWorker(QObject):
         try:
             analyzer = self._analyzer_factory()
             templates = None
-            if self.mode == "test":
+            if self.mode != "enroll":
                 templates = self._store.load(analyzer.model_id).embeddings
         except (FaceModelsUnavailable, TemplateError) as exc:
             self.finished.emit(False, str(exc))
@@ -118,6 +121,8 @@ class CaptureWorker(QObject):
         try:
             if self.mode == "enroll":
                 self._enroll(source, analyzer)
+            elif self.mode == "liveness":
+                self._check_liveness(source, analyzer, templates)
             else:
                 self._test(source, analyzer, templates)
         except CameraError as exc:
@@ -162,11 +167,22 @@ class CaptureWorker(QObject):
             if issue is FrameIssue.OK:
                 score = best_similarity(analyzer.embed(frame, faces[0]), templates)
                 verdict = "MATCH" if score >= self._threshold else "no match"
-                self.status.emit(f"Score {score:.2f} (threshold {self._threshold:.2f}): {verdict}")
+                self.status.emit(f"Score {score:.2f} (threshold {self._threshold:.2f}): {verdict}"
+                                 f"   |   turn {signed_yaw(faces[0]):+.2f}")
             else:
                 self.status.emit(GUIDANCE[issue])
             self.frame.emit(to_qimage(_outline(frame, faces, issue is FrameIssue.OK)))
         self.finished.emit(True, "Test finished.")
+
+
+    def _check_liveness(self, source: FrameSource, analyzer: FaceAnalyzer, templates: np.ndarray) -> None:
+        def show(frame, faces) -> None:
+            self.frame.emit(to_qimage(_outline(frame, faces, len(faces) == 1)))
+
+        result = run_challenges(source, analyzer, templates, self._liveness,
+                                pick_challenges(self._liveness.challenges), self.status.emit,
+                                self._stop, show)
+        self.finished.emit(result.passed, f"Liveness check: {result.reason}.")
 
 
 class FaceDialog(QDialog):
@@ -176,7 +192,7 @@ class FaceDialog(QDialog):
         self.worker = worker
         self.succeeded = False
         enroll = worker.mode == "enroll"
-        self.setWindowTitle("Drivion - enroll your face" if enroll else "Drivion - test face recognition")
+        self.setWindowTitle("Drivion - enroll your face" if enroll else "Drivion - test face checks")
         self.setStyleSheet(theme.STYLESHEET + f"QDialog {{ background: {theme.BACKGROUND}; }}")
         self.resize(720, 640)
 
@@ -201,8 +217,11 @@ class FaceDialog(QDialog):
         photos = ("; because store_raw_images is on, small aligned face crops are also kept, encrypted"
                   if keep_crops else "")
         text = CONSENT_TEXT.format(photos=photos) if enroll else (
+            "<b>Test the head-turn liveness check.</b><br><br>The camera turns on and Drivion asks "
+            "you to turn your head. Nothing is saved." if self.worker.mode == "liveness" else
             "<b>Test face recognition.</b><br><br>The camera turns on and shows your live match "
-            "score against the threshold. Nothing is saved. Close the window to stop.")
+            "score against the threshold, and how far your head is turned. Nothing is saved. "
+            "Close the window to stop.")
         if enroll and already_enrolled:
             text += "<br><br><b>This replaces your current enrollment.</b>"
         info = QLabel(text, wordWrap=True, textFormat=Qt.TextFormat.RichText)
