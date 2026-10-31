@@ -79,13 +79,17 @@ def _sharpness(gray: np.ndarray) -> float:
     return float(laplacian.var())
 
 
-def _yaw(face: Face) -> float:
+def signed_yaw(face: Face) -> float:
+    """Nose offset from the eye midpoint, relative to eye distance.
+
+    0 is straight ahead; positive means the nose is to the right of the picture.
+    """
     right_eye, left_eye, nose = face.landmarks[0], face.landmarks[1], face.landmarks[2]
     eye_distance = float(np.linalg.norm(left_eye - right_eye))
     if eye_distance < 1:
         return 1.0
     midpoint = (left_eye + right_eye) / 2
-    return abs(float(nose[0] - midpoint[0])) / eye_distance
+    return float(nose[0] - midpoint[0]) / eye_distance
 
 
 def assess(frame_bgr: np.ndarray, faces: list[Face], limits: QualityLimits = QualityLimits()) -> FrameIssue:
@@ -105,7 +109,7 @@ def assess(frame_bgr: np.ndarray, faces: list[Face], limits: QualityLimits = Qua
         return FrameIssue.TOO_DARK
     if brightness > limits.max_brightness:
         return FrameIssue.TOO_BRIGHT
-    if _yaw(face) > limits.max_yaw:
+    if abs(signed_yaw(face)) > limits.max_yaw:
         return FrameIssue.NOT_FRONTAL
     if _sharpness(gray) < limits.min_sharpness:
         return FrameIssue.BLURRY
