@@ -90,3 +90,44 @@ def test_end_to_end_verification_on_real_photos(dataset, analyzer):
     assert verify(Photos(frames[1][5:]), analyzer, owner, settings).verified
     for stranger in (2, 3):
         assert not verify(Photos(frames[stranger]), analyzer, owner, settings).verified
+
+
+def _tilt_flat(frame, degrees):
+    """Perspective view of a flat picture rotated about its vertical axis."""
+    import cv2
+
+    h, w = frame.shape[:2]
+    angle = np.radians(degrees)
+    focal = 1.2 * w
+    source = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+    target = []
+    for x, y in source - [w / 2, h / 2]:
+        depth = x * np.sin(angle) + focal
+        target.append([x * np.cos(angle) * focal / depth + w / 2, y * focal / depth + h / 2])
+    matrix = cv2.getPerspectiveTransform(source, np.float32(target))
+    return cv2.warpPerspective(frame, matrix, (w, h), borderValue=(128, 128, 128))
+
+
+@needs_dataset
+def test_tilting_a_real_photo_never_passes_liveness(dataset, analyzer):
+    from drivion.vision.liveness import Challenge, LivenessSettings, run_challenges
+    from drivion.vision.quality import QualityLimits
+
+    tool, images, targets = dataset
+    settings = LivenessSettings(threshold=FaceSettings().similarity_threshold,
+                                limits=QualityLimits(min_face_px=60, min_sharpness=5, min_brightness=30))
+    for index in np.where(targets == 1)[0][:5]:
+        frame = tool.to_bgr_scene(images[index])
+        templates = analyzer.embed(frame, analyzer.detect(frame)[0])[None, :]
+
+        class TiltedPhoto:
+            def __init__(self):
+                self.sweep = [0, 0, 0, 0, 20, 35, 50, 50, 35, 20, 0, -20, -35, -50, -50, -35, -20] * 8
+
+            def read(self):
+                return _tilt_flat(frame, self.sweep.pop(0)) if self.sweep else None
+
+        for challenge in Challenge:
+            result = run_challenges(TiltedPhoto(), analyzer, templates, settings, [challenge],
+                                    lambda text: None)
+            assert not result.passed, result
