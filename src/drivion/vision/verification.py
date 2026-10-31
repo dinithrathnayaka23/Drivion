@@ -43,6 +43,7 @@ class Outcome(StrEnum):
     CAMERA_ERROR = "CAMERA_ERROR"
     NOT_ENROLLED = "NOT_ENROLLED"
     MODELS_MISSING = "MODELS_MISSING"
+    NOT_LIVE = "NOT_LIVE"
     CANCELLED = "CANCELLED"
 
 
@@ -56,6 +57,7 @@ REASONS: dict[Outcome, str] = {
     Outcome.CAMERA_ERROR: "the camera isn't available",
     Outcome.NOT_ENROLLED: "no face is enrolled (run drivion --enroll-face)",
     Outcome.MODELS_MISSING: "the face models are missing (run drivion --download-models)",
+    Outcome.NOT_LIVE: "the liveness check failed",
     Outcome.CANCELLED: "verification was cancelled",
 }
 
@@ -77,6 +79,7 @@ class VerificationResult:
     unknown: int = 0
     frames: int = 0
     issues: Counter = field(default_factory=Counter)
+    detail: str | None = None  # a more specific reason than the outcome's
 
     @property
     def verified(self) -> bool:
@@ -84,7 +87,7 @@ class VerificationResult:
 
     @property
     def reason(self) -> str:
-        return REASONS[self.outcome]
+        return self.detail or REASONS[self.outcome]
 
 
 @dataclass(frozen=True)

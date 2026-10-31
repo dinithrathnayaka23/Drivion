@@ -27,8 +27,12 @@ required_matches = 3        # matching frames needed to unlock (1..10; more = st
 enroll_samples = 8          # face samples taken when enrolling (3..20)
 camera_index = 0            # 0 = default webcam
 store_raw_images = false    # true = also keep small aligned face crops (encrypted)
-liveness_mode = "challenge" # "none", "blink" or "challenge" (Milestone 10)
-verification_timeout_s = 10.0  # 4..60; no result in time = access denied
+liveness_mode = "challenge" # "challenge" = random head turns; "none" = a photo could unlock
+liveness_challenges = 2     # head turns to pass (1..4); more = harder to replay, slower
+liveness_timeout_s = 6.0    # 3..15; time allowed for each turn
+liveness_turn = 0.30        # 0.2..0.6; how far to turn. See drivion --test-liveness
+camera_mirrored = false     # true if your camera mirrors the picture
+verification_timeout_s = 10.0  # 4..60; no face match in time = access denied
 
 [voice]
 enabled = true              # listen for spoken commands while the dashboard is open

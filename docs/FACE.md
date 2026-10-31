@@ -8,7 +8,7 @@ wake word ─► VERIFYING: camera on ─► YuNet: find faces ─► quality ch
                                                                                   │
                     best cosine similarity to your encrypted templates  ◄──────────┘
                                                                                   │
-          3 frames ≥ 0.55 (and more matches than unknowns) ─► ACTIVE   (camera off)
+          3 frames ≥ 0.55 (and more matches than unknowns) ─► random head turns ─► ACTIVE  (camera off)
           otherwise ─► "Access denied: <reason>" ─► STANDBY            (camera off)
 ```
 
@@ -18,6 +18,7 @@ wake word ─► VERIFYING: camera on ─► YuNet: find faces ─► quality ch
 drivion --download-models   # adds YuNet (0.2 MB) and SFace (37 MB), SHA-256 checked
 drivion --enroll-face       # asks for consent, then takes 8 samples (~10 s)
 drivion --test-face         # optional: shows your live score against the threshold
+drivion --test-liveness     # optional: try the head-turn check with a preview
 drivion                     # say the wake word: Drivion now checks your face
 ```
 
@@ -32,10 +33,75 @@ Most laptops, including the MSI GF63, have an ordinary RGB webcam and no infrare
   That's what YuNet and SFace do, and what the measurements below are based on.
 - **Spoofing is the gap.** Windows Hello uses IR and depth to check that a real face is
   present. An RGB camera can't, so **a good photo or video of you could pass face matching
-  alone**. Milestone 10 adds a liveness challenge to make that much harder, but it can't
-  make an RGB webcam as strong as Windows Hello.
+  alone**. The liveness check below makes that much harder, but it can't make an RGB
+  webcam as strong as Windows Hello.
 - **That's why Drivion only protects its own features.** It never replaces or bypasses
   your Windows sign-in, and power actions still need a spoken "yes".
+
+## Liveness: head-turn challenges
+
+After a face match, Drivion speaks random prompts ("Turn your head to your left"), also
+shown as tray notifications. The dashboard opens only once you've followed them and looked
+back at the camera. Set `liveness_mode = "none"` to turn this off, in which case a photo
+of you can unlock Drivion.
+
+**How a turn is measured.** A real head is 3D: when it turns, the nose swings sideways
+relative to the eyes. A flat picture doesn't do that: tilting it shrinks everything
+together. Drivion needs a change of at least `liveness_turn` (0.30) from your own centred
+position.
+
+| Measured on real detector output | Turn value |
+|---|---|
+| Natural head position across 400 ORL photos | up to 0.314 from straight ahead |
+| Flat photo tilted by 20° / 35° / 50° (simulated) | changed by at most 0.109 / 0.126 / 0.096 |
+| Required for a turn | a change of **0.30** from your own starting position |
+
+**Rules:**
+
+- The direction of each turn is chosen with the OS's secure random source.
+- Turning the wrong way fails immediately.
+- A second face, the face jumping position (swapping pictures), or losing the face for
+  too long ends the check.
+- A fresh frontal face match is needed after the last turn, so nobody can take over
+  during the turns.
+- Anything unclear means access denied (fail closed).
+
+### What it stops
+
+| Attempt | Result |
+|---|---|
+| Printed photo or a photo on a phone, held still | Stopped: no turn is seen |
+| Tilting a photo | Stopped: the nose barely moves relative to the eyes (tested on simulated tilts) |
+| Swapping between pictures of you turned left and right | Usually stopped by the jump check, unless done smoothly |
+| A fixed recorded video of you turning | Stopped most of the time: with 2 challenges a video has a 1 in 4 chance of matching. Raise `liveness_challenges` for better odds (3 = 1 in 8, 4 = 1 in 16) |
+
+### What it can't stop
+
+- **A live video call, or a person controlling a video in real time,** responding to the
+  prompts they hear.
+- **A real-time deepfake** of your face following the prompts.
+- **A good 3D mask or model** of your head.
+- **You being coerced, or someone turning your head while you sleep.**
+
+Those need depth or infrared sensors, or a separate factor such as a Windows PIN. This is
+another reason Drivion never replaces your Windows sign-in.
+
+### Why no blink check
+
+YuNet provides five points (eyes, nose, mouth corners) and none on the eyelids, so a blink
+can't be measured from them. An unverifiable guess would be worse than no check, so the
+unimplemented `"blink"` mode was removed. A config that still sets it is rejected.
+
+### Tuning
+
+`drivion --test-liveness` runs the check with a preview, and `drivion --test-face` shows
+your current turn value.
+
+- **Turns aren't noticed:** turn further, or lower `liveness_turn` slightly (keep it well
+  above 0.13, the most a tilted photo produced).
+- **"Turned the wrong way" when you followed the prompt:** your camera mirrors the picture.
+  Set `camera_mirrored = true`.
+- **Too slow:** raise `liveness_timeout_s`.
 
 ## How the threshold was chosen
 
@@ -146,7 +212,7 @@ $env:DRIVION_FACE_DATASET = "<extracted folder>"; pytest tests/test_face_real.py
 
 ## Limits
 
-- **Liveness:** not yet (Milestone 10), so a photo of you can pass face matching.
+- **Liveness:** head turns only, with the limits described above.
 - **One person:** only one person can be enrolled.
 - **Accuracy:** it drops with heavy backlight, very low light, strong angles, and large
   changes in appearance.

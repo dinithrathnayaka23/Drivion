@@ -39,3 +39,10 @@ def test_test_face_needs_an_enrollment(tmp_path, capsys):
 
     assert app.main(["--config", str(tmp_path / "none.toml"), "--test-face"]) == app.EXIT_ERROR
     assert "--enroll-face" in capsys.readouterr().err
+
+
+def test_test_liveness_needs_an_enrollment(tmp_path, capsys):
+    from drivion import app
+
+    assert app.main(["--config", str(tmp_path / "none.toml"), "--test-liveness"]) == app.EXIT_ERROR
+    assert "--enroll-face" in capsys.readouterr().err

@@ -3,12 +3,13 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 9 (face verification).** Drivion runs as a tray app with an
+> **Status: Milestone 10 (liveness).** Drivion runs as a tray app with an
 > animated dashboard. In standby it listens for a wake word, then **checks your face**
-> (local, encrypted templates) before opening the dashboard. While active it understands
+> (local, encrypted templates) and asks for **random head turns** before opening the
+> dashboard. While active it understands
 > spoken commands offline and carries them out through a safety layer (sleep, restart and
 > shut down only after you confirm). Questions go to a cloud AI, with fallback between
-> Gemini, Groq and OpenRouter. Liveness checks (against photos) are Milestone 10. See
+> Gemini, Groq and OpenRouter. See
 > [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/FACE.md](docs/FACE.md),
 > [docs/COMMANDS.md](docs/COMMANDS.md), [docs/ACTIONS.md](docs/ACTIONS.md) and
 > [docs/AI.md](docs/AI.md).
@@ -94,8 +95,8 @@ blue = standby, amber = verifying, cyan = active, red = error.
   it listens, the microphone chip is on. Saying the phrase starts face verification, and
   the microphone is released straight away.
 - **Face verification:** after the wake word, or **Open Drivion** in the tray, the camera
-  turns on and the icon turns amber. Look at the camera. Three matching frames open the
-  dashboard and switch the camera off. Anything else, such as a stranger, no face, two
+  turns on and the icon turns amber. Look at the camera. Then follow the spoken head-turn
+  prompts. The dashboard then opens and the camera switches off. Anything else, such as a stranger, no face, two
   faces, poor light or no enrollment, gives *"Access denied: <reason>"* and Drivion returns
   to standby (**fail closed**).
 - With `--simulate`, use *Simulate → Wake word detected*, then *Face verified*, to reach
