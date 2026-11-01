@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
     sleep_clicked = Signal()
     exit_clicked = Signal()
     clear_history_clicked = Signal()
+    settings_clicked = Signal()
     close_requested = Signal()  # user pressed X; the shell decides what that means
 
     def __init__(self, history_limit: int = 50, animated: bool = True,
@@ -159,12 +160,15 @@ class MainWindow(QMainWindow):
     def _build_footer(self) -> QHBoxLayout:
         footer = QHBoxLayout()
         footer.addStretch()
+        self.settings_button = QPushButton("Settings")
+        self.settings_button.clicked.connect(self.settings_clicked)
         self.sleep_button = QPushButton("Go to sleep")
         self.sleep_button.setToolTip("Close the dashboard and return to standby")
         self.exit_button = QPushButton("Exit Drivion", objectName="exit")
         self.exit_button.setToolTip("Stop Drivion completely, including the background listener")
         self.sleep_button.clicked.connect(self.sleep_clicked)
         self.exit_button.clicked.connect(self.exit_clicked)
+        footer.addWidget(self.settings_button)
         footer.addWidget(self.sleep_button)
         footer.addWidget(self.exit_button)
         return footer
@@ -178,6 +182,7 @@ class MainWindow(QMainWindow):
         self.state_label.setStyleSheet(f"color: {theme.STATE_COLORS[state]};")
         self.detail_label.setText(detail)
         self.sleep_button.setEnabled(state is AppState.ACTIVE)
+        self.settings_button.setEnabled(state is AppState.ACTIVE)
         self.setWindowIcon(state_icon(state))
         self._refresh_listening()
 

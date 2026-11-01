@@ -20,6 +20,7 @@ class TrayIcon(QSystemTrayIcon):
     open_requested = Signal()
     sleep_requested = Signal()
     recover_requested = Signal()
+    settings_requested = Signal()
     exit_requested = Signal()
     simulate_wake_word = Signal()
     simulate_face_verified = Signal()
@@ -38,6 +39,7 @@ class TrayIcon(QSystemTrayIcon):
         self.open_action = self._add("Open Drivion", self.open_requested)
         self.sleep_action = self._add("Go to sleep (standby)", self.sleep_requested)
         self.recover_action = self._add("Recover from error", self.recover_requested)
+        self.settings_action = self._add("Settings", self.settings_requested)
         self._menu.insertAction(self.open_action, self.status_action)
         self._menu.insertSeparator(self.open_action)
 
@@ -78,6 +80,7 @@ class TrayIcon(QSystemTrayIcon):
         self.status_action.setText(f"Drivion: {state}")
         self.open_action.setEnabled(state in (AppState.STANDBY, AppState.ACTIVE))
         self.sleep_action.setEnabled(state is AppState.ACTIVE)
+        self.settings_action.setEnabled(state is AppState.ACTIVE)  # only while unlocked
         self.recover_action.setEnabled(state is AppState.ERROR)
         self.exit_action.setEnabled(state is not AppState.SHUTTING_DOWN)
 

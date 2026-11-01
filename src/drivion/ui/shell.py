@@ -18,6 +18,7 @@ import threading
 from collections.abc import Callable
 
 from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QDialog
 
 from drivion.core.activity import ActivityFeed, Device, DeviceState
 from drivion.core.controller import AssistantController
@@ -50,6 +51,7 @@ class Shell(QObject):
         window: MainWindow,
         tray: TrayIcon | None,
         command_handler: Callable[[str], None] | None = None,
+        settings_factory: Callable[[], QDialog] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -59,6 +61,8 @@ class Shell(QObject):
         self.tray = tray
         self.window_always_visible = tray is None
         self._command_handler = command_handler
+        self._settings_factory = settings_factory
+        self.settings_dialog: QDialog | None = None
         self._simulated_phrases = itertools.cycle(SIMULATED_PHRASES)
 
         controller.state_changed.connect(self._on_state_changed)
@@ -79,6 +83,7 @@ class Shell(QObject):
         window.sleep_clicked.connect(lambda: self._post(EventType.SLEEP_REQUESTED, "window"))
         window.exit_clicked.connect(lambda: self._post(EventType.EXIT_REQUESTED, "window"))
         window.clear_history_clicked.connect(feed.clear_history)
+        window.settings_clicked.connect(self.open_settings)
         window.close_requested.connect(self._on_window_close_requested)
 
         if tray is not None:
@@ -89,6 +94,7 @@ class Shell(QObject):
         tray.sleep_requested.connect(lambda: self._post(EventType.SLEEP_REQUESTED, "tray"))
         tray.recover_requested.connect(lambda: self._post(EventType.RECOVER_REQUESTED, "tray"))
         tray.exit_requested.connect(lambda: self._post(EventType.EXIT_REQUESTED, "tray"))
+        tray.settings_requested.connect(self.open_settings)
         tray.simulate_wake_word.connect(
             lambda: self._post(EventType.WAKE_WORD_DETECTED, "simulator"))
         tray.simulate_face_verified.connect(
@@ -110,6 +116,19 @@ class Shell(QObject):
     def request_activation(self) -> None:
         """Called when a second Drivion launch asks this one to open."""
         self._post(EventType.ACTIVATION_REQUESTED, "second launch")
+
+    def open_settings(self) -> None:
+        """Settings can change security options, so they need an unlocked Drivion."""
+        if self._controller.state is not AppState.ACTIVE or self._settings_factory is None:
+            return
+        if self.settings_dialog is None:
+            self.settings_dialog = self._settings_factory()
+            self.settings_dialog.finished.connect(self._forget_settings)
+        self.settings_dialog.show()
+        self.settings_dialog.raise_()
+
+    def _forget_settings(self) -> None:
+        self.settings_dialog = None
 
     def simulate_command(self) -> None:
         """Developer simulation: feed the next sample phrase to the real command pipeline."""
@@ -147,6 +166,8 @@ class Shell(QObject):
             self.window.show_and_raise()
         elif transition.old is AppState.ACTIVE and not self.window_always_visible:
             self.window.hide()
+        if transition.old is AppState.ACTIVE and self.settings_dialog is not None:
+            self.settings_dialog.reject()  # never left open once Drivion locks
 
     def _on_window_close_requested(self) -> None:
         if self.window_always_visible:
