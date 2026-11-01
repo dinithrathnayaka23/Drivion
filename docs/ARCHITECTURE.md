@@ -94,6 +94,15 @@ discarded, so a late "face OK" from a timed-out attempt can't unlock a newer one
 | "Lock Windows" (**Windows lock**) | Lock screen appears | Keeps running | Session locked; you need your Windows password/PIN |
 | "Put my computer to sleep" (**Windows sleep**) | The PC suspends after you confirm | Frozen along with everything else | Low-power state; the mic is off, so the wake word cannot wake the PC |
 
+### Integration, settings and recovery (M11)
+
+`tests/test_end_to_end.py` runs the whole flow on real threads with only hardware and
+models faked: wake word, face, liveness, command, action, and back to standby.
+`ui/settings.py` edits `settings.toml` through `config/store.py`, which validates with the
+startup rules before an atomic write. Keys go only to `.env`. The screen opens only while
+ACTIVE and closes when Drivion leaves ACTIVE. `doctor.py` is a read-only health check.
+See [RECOVERY.md](RECOVERY.md).
+
 ### Face verification (M9)
 
 `VERIFYING → FaceVerificationService (camera on) → YuNet detect → quality checks → SFace
@@ -173,7 +182,7 @@ draws a static indicator instead.
 | 8 | LLM ✅ | Provider interface, Gemini/Groq/OpenRouter with model fallback, structured intent fallback, general Q&A, network-error handling |
 | 9 | Face verification ✅ | Consent-based enrollment, YuNet detection + SFace embeddings, encrypted local templates, threshold calibration |
 | 10 | Liveness ✅ | Random head-turn challenges, honest limits documented |
-| 11 | Integration | End-to-end flow, settings dialog, recovery procedures |
+| 11 | Integration ✅ | End-to-end flow, settings dialog, recovery procedures |
 | 12 | Packaging | PyInstaller build, startup at login (Task Scheduler), final README |
 
 ## 5. Dependency and compatibility decisions

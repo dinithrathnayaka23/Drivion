@@ -3,14 +3,15 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 10 (liveness).** Drivion runs as a tray app with an
+> **Status: Milestone 11 (integration and settings).** Drivion runs as a tray app with an
 > animated dashboard. In standby it listens for a wake word, then **checks your face**
 > (local, encrypted templates) and asks for **random head turns** before opening the
 > dashboard. While active it understands
 > spoken commands offline and carries them out through a safety layer (sleep, restart and
 > shut down only after you confirm). Questions go to a cloud AI, with fallback between
 > Gemini, Groq and OpenRouter. See
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/FACE.md](docs/FACE.md),
+> [docs/RECOVERY.md](docs/RECOVERY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+> [docs/FACE.md](docs/FACE.md),
 > [docs/COMMANDS.md](docs/COMMANDS.md), [docs/ACTIONS.md](docs/ACTIONS.md) and
 > [docs/AI.md](docs/AI.md).
 
@@ -80,6 +81,7 @@ from log output.
 ## Run
 
 ```powershell
+drivion --doctor            # check everything and show how to fix any problem
 drivion --check-config      # validate config and print a summary; no window
 drivion                     # start in standby (tray icon only)
 drivion --simulate          # same, plus a "Simulate (developer)" tray menu
@@ -112,6 +114,8 @@ blue = standby, amber = verifying, cyan = active, red = error.
   so you can try commands without a microphone. *"Take a screenshot"* really saves one to
   `Pictures\Screenshots`. The samples never include power commands. *Toggle camera
   indicator* previews the privacy indicator.
+- **Settings** (dashboard button or tray menu, only while unlocked): voice, wake word,
+  privacy and AI provider. Changes apply the next time Drivion starts.
 - **Go to sleep**, or closing the window with X, returns to standby. The process keeps
   running in the tray.
 - **Exit Drivion** (tray menu or window button) stops the background process. Ctrl+C in
@@ -143,6 +147,9 @@ are skipped until you run `drivion --download-models`.
 | Questions and free-form requests (Gemini, Groq, OpenRouter) | Yes, plus at least one API key in `.env` |
 
 ## Troubleshooting
+
+Run `drivion --doctor` first. [docs/RECOVERY.md](docs/RECOVERY.md) covers re-enrolling your
+face and recovering from errors.
 
 - **`py -3.11` not found:** install Python 3.11 from python.org.
 - **`drivion` is not recognized:** activate the venv first (`.\.venv\Scripts\Activate.ps1`).
