@@ -99,7 +99,9 @@ def shell(qtbot, tmp_path):
     made = []
 
     def factory():
-        made.append(dialog(qtbot, tmp_path))
+        # Not given to qtbot: the shell deletes these windows itself when they close.
+        made.append(SettingsDialog(AppConfig(), lambda name: False, tmp_path / "settings.toml",
+                                   tmp_path / ".env"))
         return made[-1]
 
     s = Shell(controller, ActivityFeed(), window, None, settings_factory=factory)
@@ -141,3 +143,15 @@ def test_tray_settings_only_while_active(qapp):
     assert not tray.settings_action.isEnabled()
     tray.set_state(AppState.ACTIVE)
     assert tray.settings_action.isEnabled()
+
+
+def test_closed_settings_are_deleted_on_the_ui_thread(qtbot, shell):
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from shiboken6 import isValid
+
+    s, controller, _, made = shell
+    unlock(controller)
+    s.open_settings()
+    made[0].reject()
+    QCoreApplication.sendPostedEvents(made[0], QEvent.Type.DeferredDelete)
+    assert s.settings_dialog is None and not isValid(made[0])

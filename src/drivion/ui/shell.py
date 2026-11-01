@@ -128,7 +128,11 @@ class Shell(QObject):
         self.settings_dialog.raise_()
 
     def _forget_settings(self) -> None:
-        self.settings_dialog = None
+        # Delete on this (UI) thread. Left to Python, the dialog could be garbage
+        # collected on a worker thread, and destroying a widget there crashes Qt.
+        dialog, self.settings_dialog = self.settings_dialog, None
+        if dialog is not None:
+            dialog.deleteLater()
 
     def simulate_command(self) -> None:
         """Developer simulation: feed the next sample phrase to the real command pipeline."""
