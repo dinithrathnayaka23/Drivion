@@ -1,3 +1,4 @@
+import gc
 import logging
 import os
 import uuid
@@ -23,6 +24,10 @@ def isolated_env(tmp_path, monkeypatch):
     # Never call a real AI provider from a test: no network, no quota spent.
     monkeypatch.setenv("DRIVION_LLM_OFFLINE", "1")
     yield
+    # Destroy this test's Qt objects here, on the main thread. Otherwise the
+    # garbage collector may do it on a worker thread during a later test, which
+    # corrupts Qt's state and crashes the process with an access violation.
+    gc.collect()
     root = logging.getLogger()
     for handler in list(root.handlers):
         if not type(handler).__module__.startswith("_pytest"):
