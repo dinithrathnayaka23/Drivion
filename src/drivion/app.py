@@ -62,6 +62,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
                       help="show live match scores against your enrolled face, then exit")
     face.add_argument("--delete-face", action="store_true",
                       help="delete all stored face data, then exit")
+    parser.add_argument("--doctor", action="store_true",
+                        help="check everything Drivion needs and show how to fix problems, then exit")
     face.add_argument("--yes", action="store_true", help="don't ask for confirmation (with --delete-face)")
     parser.add_argument(
         "--list-voices", action="store_true",
@@ -90,6 +92,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     log.info("Drivion %s starting (config file: %s)", __version__,
              args.config if args.config.exists() else "defaults")
 
+    if args.doctor:
+        from drivion.doctor import print_report, run_checks
+
+        return EXIT_OK if print_report(run_checks(config, secrets)) else EXIT_ERROR
+
     if args.check_config:
         print("Configuration OK")
         print(f"  config file : {args.config if args.config.exists() else '(none, using defaults)'}")
@@ -112,7 +119,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         mode = "enroll" if args.enroll_face else "test" if args.test_face else "liveness"
         return _face_dialog(config, mode)
 
-    return _run_ui(config, secrets, simulate=args.simulate)
+    return _run_ui(config, secrets, simulate=args.simulate, config_path=args.config,
+                   env_path=args.env_file)
+
+
+def _settings_dialog(config: AppConfig, secrets, config_path: Path, env_path: Path):
+    from PySide6.QtCore import QProcess
+    from PySide6.QtWidgets import QMessageBox
+
+    from drivion.ui.settings import SettingsDialog
+
+    def re_enroll() -> None:
+        # A separate process: the enrollment window has its own event loop.
+        QProcess.startDetached(sys.executable, ["-m", "drivion", "--enroll-face"])
+
+    def delete_face() -> bool:
+        answer = QMessageBox.question(None, "Delete face data",
+                                      "Delete your face data? Drivion can't unlock until you enroll again.")
+        return answer == QMessageBox.StandardButton.Yes and _face_store().delete()
+
+    return SettingsDialog(config, lambda name: secrets.key_for(name) is not None, config_path, env_path,
+                          on_re_enroll=re_enroll, on_delete_face=delete_face)
 
 
 def _face_store():
@@ -226,7 +253,7 @@ def _list_audio_devices() -> int:
     return EXIT_OK
 
 
-def _run_ui(config: AppConfig, secrets, simulate: bool) -> int:
+def _run_ui(config: AppConfig, secrets, simulate: bool, config_path: Path, env_path: Path) -> int:
     # Imported here so --check-config and config tests don't load Qt.
     from PySide6.QtWidgets import QApplication
 
@@ -250,12 +277,13 @@ def _run_ui(config: AppConfig, secrets, simulate: bool) -> int:
         return EXIT_ALREADY_RUNNING
 
     try:
-        return _run_event_loop(app, config, secrets, simulate, name)
+        return _run_event_loop(app, config, secrets, simulate, name, config_path, env_path)
     finally:
         lock.release()
 
 
-def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str) -> int:
+def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str,
+                    config_path: Path, env_path: Path) -> int:
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QSystemTrayIcon
 
@@ -310,7 +338,8 @@ def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str) 
         animated=config.ui.animations,
         wake_phrase=wake_phrase,
     )
-    shell = Shell(controller, feed, window, tray, command_handler=processor.handle)
+    shell = Shell(controller, feed, window, tray, command_handler=processor.handle,
+                  settings_factory=lambda: _settings_dialog(config, secrets, config_path, env_path))
 
     activation = ActivationServer(name)
     activation.activation_requested.connect(shell.request_activation)
