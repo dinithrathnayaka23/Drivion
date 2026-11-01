@@ -62,6 +62,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
                       help="show live match scores against your enrolled face, then exit")
     face.add_argument("--delete-face", action="store_true",
                       help="delete all stored face data, then exit")
+    parser.add_argument("--doctor", action="store_true",
+                        help="check everything Drivion needs and show how to fix problems, then exit")
     face.add_argument("--yes", action="store_true", help="don't ask for confirmation (with --delete-face)")
     parser.add_argument(
         "--list-voices", action="store_true",
@@ -89,6 +91,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     log_file = configure_logging(config.general.log_level, paths.log_dir(), secrets.values())
     log.info("Drivion %s starting (config file: %s)", __version__,
              args.config if args.config.exists() else "defaults")
+
+    if args.doctor:
+        from drivion.doctor import print_report, run_checks
+
+        return EXIT_OK if print_report(run_checks(config, secrets)) else EXIT_ERROR
 
     if args.check_config:
         print("Configuration OK")
