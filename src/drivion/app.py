@@ -65,6 +65,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
                       help="delete all stored face data, then exit")
     parser.add_argument("--doctor", action="store_true",
                         help="check everything Drivion needs and show how to fix problems, then exit")
+    parser.add_argument("--test-wake", action="store_true",
+                        help="listen for 30 seconds and show what is heard (nothing is saved), then exit")
     parser.add_argument("--self-test", action="store_true",
                         help="load every model and library and run them on silence, then exit")
     parser.add_argument("--autostart", choices=("on", "off", "status"),
@@ -101,6 +103,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         from drivion.doctor import print_report, run_checks
 
         return EXIT_OK if print_report(run_checks(config, secrets)) else EXIT_ERROR
+
+    if args.test_wake:
+        return _test_wake(config)
 
     if args.self_test:
         from drivion.doctor import print_report, run_self_test
@@ -142,6 +147,37 @@ def _report_fatal(message: str) -> None:
         import ctypes
 
         ctypes.windll.user32.MessageBoxW(None, message, "Drivion", 0x10)  # MB_ICONERROR
+
+
+def _test_wake(config: AppConfig, seconds: float = 30.0) -> int:
+    import time
+
+    from drivion.audio.source import AudioDeviceError, MicrophoneSource
+    from drivion.speech.stt import SpeechUnavailable
+
+    def show(text: str, woke: bool) -> None:
+        print(f"  {'WAKE' if woke else 'no  '}  heard: {text or '(nothing clear)'}", flush=True)
+
+    try:
+        engine, frame_samples, phrase = _spoken_wake_engine(config, on_heard=show)
+        engine.reset()
+    except SpeechUnavailable as exc:
+        print(exc, file=sys.stderr)
+        return EXIT_ERROR
+    source = MicrophoneSource(config.wake_word.input_device, frame_samples)
+    try:
+        source.open()
+    except AudioDeviceError as exc:
+        print(exc, file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Say “{phrase}” a few times. Listening for {seconds:.0f} seconds. Nothing is saved.", flush=True)
+    deadline = time.monotonic() + seconds
+    try:
+        while time.monotonic() < deadline:
+            engine.process(source.read())
+    finally:
+        source.close()
+    return EXIT_OK
 
 
 def _set_autostart(choice: str) -> int:
@@ -483,7 +519,7 @@ def _register_wake_word(
     return phrase, True, None
 
 
-def _spoken_wake_engine(config: AppConfig):
+def _spoken_wake_engine(config: AppConfig, on_heard=None):
     """Wake on the phrase with the speech recognizer. Returns (engine, frame size, phrase)."""
     from drivion.audio.spoken_wake import SpokenWakeEngine
     from drivion.audio.wake_word import DEFAULT_PHRASE, sensitivity_to_threshold
@@ -493,7 +529,8 @@ def _spoken_wake_engine(config: AppConfig):
     voice = config.voice
     model_dir = check_whisper_model(paths.models_dir(), voice.stt_model)
     engine = SpokenWakeEngine(SileroVad, lambda: _shared_transcriber(model_dir, voice.stt_threads),
-                              speech_threshold=sensitivity_to_threshold(config.wake_word.sensitivity))
+                              speech_threshold=sensitivity_to_threshold(config.wake_word.sensitivity),
+                              on_heard=on_heard)
     return engine, VAD_FRAME_SAMPLES, config.wake_word.phrase or DEFAULT_PHRASE
 
 
