@@ -16,6 +16,9 @@ and "Drivion" is ignored at the start and end of a command.
 | Intent | Examples | Parameters |
 |---|---|---|
 | `OPEN_APP` | "open Chrome", "launch VS Code", "start the calculator" | app from your allowlist |
+| `OPEN_INSTALLED_APP` | "open Spotify", "launch Photoshop", "open task manager" | app from the Windows Start menu |
+| `OPEN_SETTINGS` | "open settings", "open bluetooth settings", "go to wi-fi settings" | one of the fixed Settings pages |
+| `OPEN_SURFACE` | "open the start menu", "open search", "show the desktop", "open notifications", "open quick settings", "open task view" | one of the fixed parts of Windows |
 | `OPEN_WEBSITE` | "go to YouTube", "open the GitHub website" | site from your allowlist |
 | `OPEN_FOLDER` | "open my downloads folder", "show me my documents" | folder from your allowlist |
 | `MINIMIZE_APP` / `RESTORE_APP` | "minimize Chrome", "bring back VS Code" | app from your allowlist |
@@ -58,9 +61,11 @@ These are different intents and are never confused:
    `CANCEL`, never `OPEN_APP`.
 3. **Validate** with pydantic. "Set the volume to 150%" is understood but rejected: *"The
    volume must be between 0 and 100 percent."*
-4. **Only allowlisted targets.** "Open Spotify" (not in your list) or "go to example.com"
-   is refused. Drivion never opens an arbitrary program, address or path. App names are
-   **not** fuzzy-matched: guessing which app you meant is how the wrong thing gets opened.
+4. **Only known targets.** "Open <name>" checks your allowlist, then the apps in the Windows
+   Start menu, then Settings pages. "Go to example.com" is refused. Drivion never opens an
+   arbitrary program, address or path. App names are **not** fuzzy-matched: guessing which
+   app you meant is how the wrong thing gets opened. If a name fits several apps, Drivion
+   asks which one.
 5. **Questions**, i.e. sentences that start with what, who, how, can, tell me and so on,
    become `ASK_QUESTION`. Anything else gets *"Sorry, I don't know how to do that yet."*
 

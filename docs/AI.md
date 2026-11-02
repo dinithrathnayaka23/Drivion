@@ -26,6 +26,9 @@ Commands like "set the volume to 40 percent" or "open Chrome" never leave your c
 3. Run `drivion --check-config` to see which keys Drivion detects. It never prints the
    keys themselves.
 
+The AI can open Settings pages and parts of Windows, but it can't open installed apps outside
+your allowlist. Only your own spoken command can do that.
+
 `.env` is git-ignored. Keys are never put in `settings.toml`, never written in the code,
 and never logged; the log redaction filter masks them even if a provider echoes one back.
 A value that is empty or looks like a placeholder (`your-…`, `<…>`, `changeme`) counts as

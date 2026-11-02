@@ -31,10 +31,11 @@
 
 |   |   |
 |---|---|
-| 🎙️ **Hands-free wake word** | Runs quietly in the system tray and listens for its wake phrase on your own PC |
+| 🎙️ **Hands-free wake phrase** | Runs quietly in the system tray and listens for "Hey Drivion" on your own PC |
 | 🙂 **Face unlock** | Checks your face, then asks for random head turns before it accepts a command |
 | 🗣️ **Offline voice commands** | Speech recognition and simple commands run on your computer, with no internet needed |
-| 🛡️ **Safety layer** | Only registered actions and allowlisted apps run, and power actions need a spoken "yes" |
+| 🖥️ **Control of your PC** | Opens any app in your Start menu, about 30 Windows Settings pages, the Start menu and more |
+| 🛡️ **Safety layer** | Only registered actions run, and power actions need a spoken "yes" |
 | 🤖 **AI fallback** | Questions go to Gemini, Groq or OpenRouter, and the next provider takes over if one fails |
 | 🔒 **Local, encrypted face data** | Stores encrypted face templates rather than photos, tied to your Windows account |
 | 🩺 **Built-in recovery** | `--doctor` finds problems and prints the fix, and `--self-test` proves every engine works |
@@ -51,16 +52,16 @@ flowchart LR
 
 1. **Standby.** No window is open, and only the small wake-word model is listening.
 2. **Verifying.** The microphone is released and the camera turns on. Drivion matches your
-   face and asks for random head turns. If anything is wrong, it denies access and returns
-   to standby. This is called *failing closed*.
+   face, then speaks each step: turn your head, look back at the camera, and turn again.
+   If anything is wrong, it says why, denies access and returns to standby. This is called
+   *failing closed*.
 3. **Active.** The camera turns off, the dashboard opens, and Drivion says *"I'm listening."*
 4. **Back to standby.** Say *"Drivion, go to sleep"*, stay silent for 20 seconds, or close
    the window. Drivion keeps running in the tray.
 
 > [!NOTE]
-> The wake phrase is currently **"Hey Jarvis"**, a built-in stand-in. Drivion's own phrase,
-> "Wake up, Drivion", needs a custom model that you train yourself. See
-> [docs/WAKE_WORD.md](docs/WAKE_WORD.md).
+> The wake phrase is **"Hey Drivion"**. Speech is recognised on your computer, and nothing
+> heard in standby is saved or logged. See [docs/WAKE_WORD.md](docs/WAKE_WORD.md).
 
 ## 🚀 Install
 
@@ -133,8 +134,8 @@ drivion --download-models
 
 | Model | Size | How it's checked |
 |---|---|---|
-| Wake word (openWakeWord) | about 3.6 MB | Pinned SHA-256 hash for each file |
-| Speech recognition (`base.en`) | about 150 MB | Pinned revision |
+| Speech recognition (`base.en`), also used for the wake phrase | about 150 MB | Pinned revision |
+| Optional openWakeWord engine | about 3.6 MB | Pinned SHA-256 hash for each file |
 | Face (YuNet and SFace) | about 40 MB | Pinned SHA-256 hash for each file |
 
 They go to `%LOCALAPPDATA%\Drivion\models` and work offline afterwards. A different
@@ -156,7 +157,10 @@ You don't need these exact words. Filler such as "please" and "can you" is ignor
 
 | Do this | Say something like |
 |---|---|
-| **Open things** | *"open Chrome"*, *"go to YouTube"*, *"open my downloads folder"* |
+| **Any installed app** | *"open Spotify"*, *"launch Photoshop"*, *"open task manager"* |
+| **Websites and folders** | *"go to YouTube"*, *"open my downloads folder"* |
+| **Windows Settings** | *"open settings"*, *"open bluetooth settings"*, *"go to wi-fi settings"*, *"open windows update"* |
+| **Parts of Windows** | *"open the start menu"*, *"open search"*, *"show the desktop"*, *"open notifications"*, *"open quick settings"*, *"open task view"* |
 | **Manage windows** | *"minimize Chrome"*, *"bring back VS Code"* |
 | **Volume** | *"set the volume to 40 percent"*, *"louder"*, *"mute"* |
 | **Brightness** | *"brightness to half"*, *"dim the screen"* |
@@ -170,8 +174,9 @@ or shutdown during its 10-second delay.
 
 🌐 Needs internet and at least one AI key.
 
-Apps, websites and folders must be in your allowlist. See
-[docs/COMMANDS.md](docs/COMMANDS.md) and [docs/ACTIONS.md](docs/ACTIONS.md).
+Apps come from your Start menu, without uninstallers, repair tools or admin shortcuts. If a
+name fits several apps, Drivion asks which one. Websites and folders must be in your
+allowlist. See [docs/COMMANDS.md](docs/COMMANDS.md) and [docs/ACTIONS.md](docs/ACTIONS.md).
 
 > [!TIP]
 > **"Drivion, go to sleep"** only returns Drivion to standby. **"Put my computer to sleep"**
@@ -292,7 +297,7 @@ If you move the program folder, run `drivion --autostart on` again from the new 
 | **Your voice** | Transcribed on your computer. Audio never leaves it |
 | **Face data** | Encrypted templates, protected by Windows DPAPI under your account. A copied file can't be decrypted on another PC |
 | **API keys** | Kept in `.env`, redacted from logs and never shown in the settings screen |
-| **AI** | Can only choose from Drivion's fixed list of actions, with checked values. It can't confirm its own request or run terminal commands |
+| **AI** | Can only choose from Drivion's fixed list of actions, with checked values. It can't confirm its own request, run terminal commands or open apps outside your allowlist |
 | **Sent online** | Requests Drivion can't handle offline go to your AI provider as text. Turn this off in *Settings → Privacy* |
 | **Logs** | Stored in `%LOCALAPPDATA%\Drivion\logs\drivion.log`, including the text of your spoken commands. Read them before sharing |
 
@@ -330,7 +335,7 @@ models are skipped until you run `drivion --download-models`.
 | Area | Technology |
 |---|---|
 | App and dashboard | Python 3.11, PySide6 |
-| Wake word | openWakeWord, ONNX Runtime |
+| Wake word | faster-whisper with Silero VAD; openWakeWord as an option |
 | Speech recognition | faster-whisper (`base.en`), Silero VAD |
 | Spoken replies | Windows SAPI |
 | Face verification | OpenCV YuNet and SFace |
@@ -444,8 +449,11 @@ Run `drivion --doctor` first. It checks everything and prints the fix for each p
 ## ⚠️ Known limitations
 
 - Drivion is for Windows only, and face unlock needs a webcam.
-- The wake phrase is "Hey Jarvis" until you train a custom model.
+- The wake phrase uses more CPU while people are talking nearby, and speaking it during a
+  longer sentence can be missed.
 - Spoken commands are English only (`base.en`).
+- Drivion opens apps, Settings pages and parts of Windows, but it can't click, type or change
+  a setting inside them.
 - Settings changes apply after a restart, and saving from the settings screen removes
   comments from `settings.toml`.
 - The packaged build isn't code-signed, has no installer, and is about 550 MB.

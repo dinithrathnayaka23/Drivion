@@ -102,6 +102,9 @@ your current turn value.
 - **"Turned the wrong way" when you followed the prompt:** your camera mirrors the picture.
   Set `camera_mirrored = true`.
 - **Too slow:** raise `liveness_timeout_s`.
+- **Why it failed:** the log (`drivion.log`) records how far your head turned against what
+  was needed, for example `Turn not seen: furthest 0.22, needed 0.30`. Between turns, Drivion
+  says *"Now look straight at the camera"*. Do that before it gives the next turn.
 
 ## How the threshold was chosen
 
