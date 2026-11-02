@@ -68,3 +68,9 @@ def test_config_errors_are_shown_when_there_is_no_console(tmp_path, monkeypatch)
     bad.write_text("[face]\nsimilarity_threshold = 7\n", encoding="utf-8")
     assert app.main(["--config", str(bad), "--check-config"]) == app.EXIT_CONFIG_ERROR
     assert "face.similarity_threshold" in shown[0]
+
+
+def test_build_recipe_bundles_no_user_files():
+    recipe = (paths.PROJECT_ROOT / "packaging" / "drivion.spec").read_text(encoding="utf-8")
+    code = "\n".join(line for line in recipe.splitlines() if not line.startswith("#"))
+    assert ".env" not in code and "settings" not in code and "models" not in code
