@@ -43,7 +43,10 @@ def test_every_intent_type_is_in_the_union_and_registry():
         sample = {"kind": kind}
         for name, field in model.model_fields.items():
             if field.is_required():
-                sample[name] = {"percent": 10, "direction": "up", "question": "why"}.get(name, "chrome")
+                sample[name] = {"percent": 10, "direction": "up", "question": "why", "page": "home",
+                                "surface": "start_menu", "radio": "wifi", "on": True, "dark": True,
+                                "action": {"CONTROL_WINDOW": "minimize", "MEDIA_CONTROL": "next",
+                                           "PRESS_KEYS": "save"}.get(kind)}.get(name, "chrome")
         assert s.INTENT_ADAPTER.validate_python(sample).kind == kind
 
 

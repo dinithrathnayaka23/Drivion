@@ -34,7 +34,9 @@ def test_every_registered_action_is_a_known_intent_with_a_risk(tmp_path):
     kinds = {spec.kind for spec in registry.specs}
     assert kinds == {
         "SET_VOLUME", "CHANGE_VOLUME", "MUTE", "UNMUTE", "SET_BRIGHTNESS", "CHANGE_BRIGHTNESS",
-        "OPEN_APP", "OPEN_WEBSITE", "OPEN_FOLDER", "MINIMIZE_APP", "RESTORE_APP",
+        "OPEN_APP", "OPEN_WEBSITE", "OPEN_FOLDER", "OPEN_INSTALLED_APP", "OPEN_SETTINGS", "OPEN_SURFACE",
+        "CLOSE_APP", "CONTROL_WINDOW", "TYPE_TEXT", "PRESS_KEYS", "MEDIA_CONTROL", "SET_RADIO", "SET_DARK_MODE",
+        "MINIMIZE_APP", "RESTORE_APP",
         "TAKE_SCREENSHOT", "LOCK_COMPUTER", "SLEEP_COMPUTER", "RESTART_COMPUTER", "SHUTDOWN_COMPUTER",
     }
     high = {spec.kind for spec in registry.specs if spec.needs_confirmation}

@@ -57,6 +57,7 @@ class CommandListenerService(ThreadedService):
         self._transcriber_factory = transcriber_factory
         self._speaker = speaker
         self._recorder = UtteranceRecorder(recorder_settings, frame_samples)
+        self._default_timeout_s = command_timeout_s
         self._command_timeout_s = command_timeout_s
         self._on_command = on_command
         self._on_unclear = on_unclear
@@ -71,8 +72,13 @@ class CommandListenerService(ThreadedService):
         self._mic_failed = False
         self._status: VoiceStatus | None = None
 
+    def keep_listening(self, timeout_s: float) -> None:
+        """Wait longer for this session. Safe from any thread; the next session starts normally."""
+        self._command_timeout_s = timeout_s
+
     def run(self, stop_event: threading.Event) -> None:
         self._mic_failed = False
+        self._command_timeout_s = self._default_timeout_s
         if self._transcriber is None:
             self._set_status(VoiceStatus.LOADING)
             self._vad = self._vad_factory()

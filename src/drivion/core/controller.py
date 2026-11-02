@@ -29,6 +29,7 @@ class AssistantController(QObject):
     state_changed = Signal(object)          # Transition
     notification = Signal(str, str)         # title, message (shown by the tray)
     raise_window_requested = Signal()
+    minimize_window_requested = Signal()
     shutdown_finished = Signal()
 
     _event_posted = Signal(object)

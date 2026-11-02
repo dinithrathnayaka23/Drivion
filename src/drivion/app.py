@@ -16,6 +16,7 @@ import logging
 import signal
 import sys
 from collections.abc import Sequence
+from functools import lru_cache
 from pathlib import Path
 
 from drivion import __version__
@@ -64,6 +65,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
                       help="delete all stored face data, then exit")
     parser.add_argument("--doctor", action="store_true",
                         help="check everything Drivion needs and show how to fix problems, then exit")
+    parser.add_argument("--test-wake", action="store_true",
+                        help="listen for 30 seconds and show what is heard (nothing is saved), then exit")
     parser.add_argument("--self-test", action="store_true",
                         help="load every model and library and run them on silence, then exit")
     parser.add_argument("--autostart", choices=("on", "off", "status"),
@@ -100,6 +103,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         from drivion.doctor import print_report, run_checks
 
         return EXIT_OK if print_report(run_checks(config, secrets)) else EXIT_ERROR
+
+    if args.test_wake:
+        return _test_wake(config)
 
     if args.self_test:
         from drivion.doctor import print_report, run_self_test
@@ -141,6 +147,37 @@ def _report_fatal(message: str) -> None:
         import ctypes
 
         ctypes.windll.user32.MessageBoxW(None, message, "Drivion", 0x10)  # MB_ICONERROR
+
+
+def _test_wake(config: AppConfig, seconds: float = 30.0) -> int:
+    import time
+
+    from drivion.audio.source import AudioDeviceError, MicrophoneSource
+    from drivion.speech.stt import SpeechUnavailable
+
+    def show(text: str, woke: bool) -> None:
+        print(f"  {'WAKE' if woke else 'no  '}  heard: {text or '(nothing clear)'}", flush=True)
+
+    try:
+        engine, frame_samples, phrase = _spoken_wake_engine(config, on_heard=show)
+        engine.reset()
+    except SpeechUnavailable as exc:
+        print(exc, file=sys.stderr)
+        return EXIT_ERROR
+    source = MicrophoneSource(config.wake_word.input_device, frame_samples)
+    try:
+        source.open()
+    except AudioDeviceError as exc:
+        print(exc, file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Say “{phrase}” a few times. Listening for {seconds:.0f} seconds. Nothing is saved.", flush=True)
+    deadline = time.monotonic() + seconds
+    try:
+        while time.monotonic() < deadline:
+            engine.process(source.read())
+    finally:
+        source.close()
+    return EXIT_OK
 
 
 def _set_autostart(choice: str) -> int:
@@ -353,10 +390,17 @@ def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str,
         config, controller, feed, standby_services
     )
     speaker = _build_speaker(config, session_services)
+    listeners: list = []
+
+    def stay_awake() -> None:
+        for listener in listeners:
+            listener.keep_listening(config.voice.work_timeout_s)
+        controller.minimize_window_requested.emit()  # out of the way of your work
+
     processor = _build_command_processor(config, controller, feed, speaker, wake_phrase,
-                                         secrets=secrets)
+                                         secrets=secrets, on_stay_awake=stay_awake)
     voice_input, speech_problem = _register_speech(
-        config, controller, feed, speaker, processor, active_services
+        config, controller, feed, speaker, processor, active_services, listeners
     )
     face_problem = _register_face(config, controller, feed, speaker, verifying_services)
 
@@ -428,7 +472,7 @@ def _register_wake_word(
     A missing model or engine is not fatal: Drivion still runs and can be
     opened from the tray.
     """
-    from drivion.audio.source import MicrophoneSource
+    from drivion.audio.source import FRAME_SAMPLES, MicrophoneSource
     from drivion.audio.wake_word import (
         DEFAULT_PHRASE,
         OpenWakeWordEngine,
@@ -440,6 +484,7 @@ def _register_wake_word(
     )
     from drivion.core.activity import Device
     from drivion.core.events import Event, EventType
+    from drivion.speech.stt import SpeechUnavailable
 
     settings = config.wake_word
     if not settings.enabled:
@@ -447,24 +492,55 @@ def _register_wake_word(
         return settings.phrase or DEFAULT_PHRASE, False, None
 
     try:
-        model_path, phrase = resolve_wake_word(settings.model, paths.models_dir(), settings.phrase)
-        engine = OpenWakeWordEngine(model_path, paths.models_dir())
-    except WakeWordUnavailable as exc:
+        if settings.engine == "whisper":
+            engine, frame_samples, phrase = _spoken_wake_engine(config)
+            threshold = 0.5  # that engine only ever scores 0 or 1
+            detail = f"speech model {config.voice.stt_model}"
+        else:
+            model_path, phrase = resolve_wake_word(settings.model, paths.models_dir(), settings.phrase)
+            engine, frame_samples = OpenWakeWordEngine(model_path, paths.models_dir()), FRAME_SAMPLES
+            threshold = sensitivity_to_threshold(settings.sensitivity)
+            detail = model_path.name
+    except (WakeWordUnavailable, SpeechUnavailable) as exc:
         log.warning("Wake word unavailable: %s", exc)
         return settings.phrase or DEFAULT_PHRASE, False, str(exc)
 
     service = WakeWordService(
-        source_factory=lambda: MicrophoneSource(settings.input_device),
+        source_factory=lambda: MicrophoneSource(settings.input_device, frame_samples),
         engine=engine,
-        detector=WakeWordDetector(sensitivity_to_threshold(settings.sensitivity), settings.cooldown_s),
+        detector=WakeWordDetector(threshold, settings.cooldown_s),
         on_detected=lambda score: controller.post_event(
             Event(EventType.WAKE_WORD_DETECTED, "wake word", f"score {score:.2f}")),
         on_microphone=lambda state: feed.set_device(Device.MICROPHONE, state),
         on_crash=controller.service_crashed,
     )
     standby_services.register(service)
-    log.info("Wake word ready: %r (%s)", phrase, model_path.name)
+    log.info("Wake word ready: %r (%s)", phrase, detail)
     return phrase, True, None
+
+
+def _spoken_wake_engine(config: AppConfig, on_heard=None):
+    """Wake on the phrase with the speech recognizer. Returns (engine, frame size, phrase)."""
+    from drivion.audio.spoken_wake import SpokenWakeEngine
+    from drivion.audio.wake_word import DEFAULT_PHRASE, sensitivity_to_threshold
+    from drivion.speech.stt import check_whisper_model
+    from drivion.speech.vad import VAD_FRAME_SAMPLES, SileroVad
+
+    voice = config.voice
+    model_dir = check_whisper_model(paths.models_dir(), voice.stt_model)
+    engine = SpokenWakeEngine(SileroVad, lambda: _shared_transcriber(model_dir, voice.stt_threads),
+                              speech_threshold=sensitivity_to_threshold(config.wake_word.sensitivity),
+                              on_heard=on_heard)
+    return engine, VAD_FRAME_SAMPLES, config.wake_word.phrase or DEFAULT_PHRASE
+
+
+@lru_cache(maxsize=1)
+def _shared_transcriber(model_dir: Path, threads: int):
+    """One copy of the speech model for the wake phrase and commands. They never
+    run together, because each service only runs in its own state."""
+    from drivion.speech.stt import WhisperTranscriber
+
+    return WhisperTranscriber(model_dir, threads)
 
 
 TIMEOUT_REPLY = "I didn't hear a command, so I'm going back to standby."
@@ -500,6 +576,8 @@ def _register_face(config: AppConfig, controller, feed, speaker, verifying_servi
 
     def report(attempt, result) -> None:
         kind = EventType.VERIFICATION_SUCCEEDED if result.verified else EventType.VERIFICATION_FAILED
+        if not result.verified:  # the dashboard is closed, so say why
+            speaker.say(f"Access denied: {result.reason}.")
         controller.post_event(Event(kind, "face", result.reason, attempt=attempt))
 
     def prompt(text: str) -> None:  # the dashboard is closed during verification
@@ -548,10 +626,12 @@ def _windows_backends():
     from drivion.actions.windows.desktop import WindowsDesktop
     from drivion.actions.windows.display import WmiBrightness
     from drivion.actions.windows.power import WindowsPower
+    from drivion.actions.windows.radios import WindowsRadios
     from drivion.actions.windows.screen import GdiScreenshotter
+    from drivion.actions.windows.theme import WindowsTheme
 
     return Backends(PycawVolume(), WmiBrightness(), WindowsDesktop(), GdiScreenshotter(),
-                    WindowsPower())
+                    WindowsPower(), WindowsRadios(), WindowsTheme())
 
 
 def _build_llm(config: AppConfig, secrets, catalog, transport=None):
@@ -574,7 +654,8 @@ def _build_llm(config: AppConfig, secrets, catalog, transport=None):
 
 
 def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_phrase: str,
-                             backends=None, secrets=None, llm_transport=None):
+                             backends=None, secrets=None, llm_transport=None, installed=None,
+                             on_stay_awake=lambda: None):
     """Transcript -> intent -> (safety-checked action) -> reply.
 
     Shared by voice input and the simulation menu. ``backends`` defaults to
@@ -591,12 +672,19 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
     from drivion.intents.responder import AssistantResponder
     from drivion.safety.executor import SafeExecutor
 
-    backends = backends or _windows_backends()
+    if backends is None:  # the real computer, so its real app list too
+        from drivion.actions.windows.start_apps import list_start_apps
+        from drivion.intents.installed import InstalledApps
+
+        backends, installed = _windows_backends(), InstalledApps(list_start_apps)
     catalog = Catalog.from_settings(config.commands)
     actions = config.actions
     power = PowerScheduler(backends.power, actions.power_delay_s,
                            hibernate=actions.sleep_method == "hibernate", notify=speaker.say)
-    registry = build_registry(backends, config.commands, actions, catalog.spoken_name, power)
+    registry = build_registry(backends, config.commands, actions, catalog.spoken_name, power,
+                              installed=installed,
+                              # Locked means locked: Drivion stops listening as well.
+                              on_locked=lambda: controller.post_event(Event(EventType.SLEEP_REQUESTED, "lock")))
     executor = SafeExecutor(
         registry,
         # Actions only while unlocked (ACTIVE). Read from the listener thread;
@@ -613,6 +701,8 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
         wake_phrase=wake_phrase,
         executor=executor,
         cancel_scheduled=power.cancel,
+        installed=installed,
+        on_stay_awake=on_stay_awake,
         llm=_build_llm(config, secrets, catalog, llm_transport) if secrets is not None else None,
         on_thinking=lambda: feed.set_voice_status(VoiceStatus.THINKING),
     )
@@ -620,7 +710,7 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
 
 
 def _register_speech(
-    config: AppConfig, controller, feed, speaker, processor, active_services
+    config: AppConfig, controller, feed, speaker, processor, active_services, listeners=None
 ) -> tuple[bool, str | None]:
     """Build the command listener for ACTIVE. Returns (registered?, problem to report)."""
     from drivion.audio.source import MicrophoneSource
@@ -628,7 +718,7 @@ def _register_speech(
     from drivion.core.events import Event, EventType
     from drivion.speech.listener import CommandListenerService
     from drivion.speech.recorder import RecorderSettings
-    from drivion.speech.stt import SpeechUnavailable, WhisperTranscriber, check_whisper_model
+    from drivion.speech.stt import SpeechUnavailable, check_whisper_model
     from drivion.speech.vad import VAD_FRAME_SAMPLES, SileroVad
 
     voice = config.voice
@@ -645,11 +735,11 @@ def _register_speech(
         speaker.say(TIMEOUT_REPLY)
         controller.post_event(Event(EventType.COMMAND_TIMEOUT, "command listener"))
 
-    active_services.register(CommandListenerService(
+    listener = CommandListenerService(
         source_factory=lambda: MicrophoneSource(config.wake_word.input_device, VAD_FRAME_SAMPLES),
         vad_factory=SileroVad,
         # Loaded in the listener thread on first activation, then kept.
-        transcriber_factory=lambda: WhisperTranscriber(model_dir, voice.stt_threads),
+        transcriber_factory=lambda: _shared_transcriber(model_dir, voice.stt_threads),
         speaker=speaker,
         recorder_settings=RecorderSettings(
             speech_threshold=voice.speech_threshold,
@@ -663,7 +753,10 @@ def _register_speech(
         on_microphone=lambda state: feed.set_device(Device.MICROPHONE, state),
         on_status=feed.set_voice_status,
         on_crash=controller.service_crashed,
-    ))
+    )
+    active_services.register(listener)
+    if listeners is not None:
+        listeners.append(listener)
     log.info("Voice commands ready (model %s)", voice.stt_model)
     return True, None
 

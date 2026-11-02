@@ -47,7 +47,7 @@ def test_device_chips_reflect_device_state(qtbot):
 @pytest.mark.parametrize(
     "state, mic, expected",
     [
-        (AppState.STANDBY, DeviceState.ACTIVE, "Listening for “Wake up, Drivion”"),
+        (AppState.STANDBY, DeviceState.ACTIVE, "Listening for “Hey Drivion”"),
         (AppState.ACTIVE, DeviceState.ACTIVE, "Listening for commands"),
         (AppState.ACTIVE, DeviceState.OFF, "Not listening (microphone off)"),
         (AppState.VERIFYING, DeviceState.ACTIVE, "Microphone on"),

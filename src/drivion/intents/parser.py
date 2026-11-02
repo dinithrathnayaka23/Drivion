@@ -27,7 +27,9 @@ from pydantic import ValidationError
 
 from drivion.intents import schemas as s
 from drivion.intents.catalog import Catalog, TargetKind
+from drivion.intents.installed import InstalledApps
 from drivion.intents.normalize import ASSISTANT_NAME, normalize
+from drivion.intents.system import THIS_WINDOW, settings_page
 
 
 @dataclass(frozen=True)
@@ -59,12 +61,58 @@ PCT = r"(?: percent| per cent)?"
 BY = rf"(?: by {LEVEL}{PCT})?"
 SET = r"(?:set|change|put|turn|adjust|make)"
 COMPUTER = rf"{THE}(?:computer|pc|laptop|system|machine|windows|device)"
+OPEN = r"(?:open up|open|launch|start|run|go to|show me|show|bring up|pull up|take me to|navigate to|visit|load|fire up)"
 
 _QUESTION = re.compile(
     r"(?:what|who|whom|whose|why|how|when|where|which|is|are|am|was|were|"
     r"(?:do|does|did)(?! not\b)|"  # "do you know..." is a question, "do not..." isn't
     r"can|could|should|would|will|tell me|explain|define|describe|give me|calculate)\b"
 )
+
+_TYPE = re.compile(r"\b(?:type|write|dictate)\b(?:\s+out)?(?:\s+(?:this|that)\s*:)?[\s,:]*(?P<text>.*)", re.IGNORECASE | re.DOTALL)
+_TYPE_START = re.compile(r"(?:type|write|dictate)\b")
+_THIS = r"(?:this|that|it|this window|this app|(?:the )?current window|(?:the )?active window)"
+ON_WORDS = r"(?:turn|switch|put|enable)"
+OFF_WORDS = r"(?:turn|switch|disable)"
+BLUETOOTH = r"blue ?tooth"
+WIFI = r"(?:wifi|wi fi|wireless)"
+PRESS = r"(?:press|hit|tap)(?: the)?"
+
+_KEY_PHRASES: dict[str, list[str]] = {
+    "enter": [rf"{PRESS} (?:enter|return)(?: key)?"],
+    "tab": [rf"{PRESS} tab(?: key)?"],
+    "escape": [rf"{PRESS} (?:escape|esc)(?: key)?"],
+    "backspace": [rf"{PRESS} backspace(?: key)?"],
+    "space": [rf"{PRESS} (?:space|spacebar|space bar)"],
+    "arrow_up": [rf"{PRESS} (?:up|up arrow|arrow up)"],
+    "arrow_down": [rf"{PRESS} (?:down|down arrow|arrow down)"],
+    "arrow_left": [rf"{PRESS} (?:left|left arrow|arrow left)"],
+    "arrow_right": [rf"{PRESS} (?:right|right arrow|arrow right)"],
+    "scroll_up": [r"scroll up", r"page up"],
+    "scroll_down": [r"scroll down", r"page down"],
+    "top": [r"(?:go|scroll) to (?:the )?top"],
+    "bottom": [r"(?:go|scroll) to (?:the )?bottom"],
+    "save": [r"save(?: this| it| that| the file| my work)?"],
+    "copy": [r"copy(?: this| that| it)?"],
+    "paste": [r"paste(?: this| that| it)?"],
+    "cut": [r"cut(?: this| that| it)?"],
+    "undo": [r"undo(?: this| that| it)?"],
+    "redo": [r"redo(?: this| that| it)?"],
+    "select_all": [r"select (?:all|everything)"],
+    "find": [r"find(?: on (?:this |the )?page)?"],
+    "new_tab": [r"(?:open )?(?:a )?new tab"],
+    "close_tab": [r"close (?:this |the )?tab"],
+    "reopen_tab": [r"reopen (?:that |the )?(?:closed )?tab"],
+    "next_tab": [r"next tab", r"switch tabs?"],
+    "previous_tab": [r"previous tab", r"last tab"],
+    "address_bar": [r"(?:go to|focus|open) (?:the )?address bar"],
+    "back": [r"go back", r"back"],
+    "forward": [r"go forward", r"forward"],
+    "refresh": [r"(?:refresh|reload)(?: this| the)?(?: page)?"],
+    "zoom_in": [r"zoom in"],
+    "zoom_out": [r"zoom out"],
+    "full_screen": [r"(?:go |make it )?full ?screen"],
+}
 
 _LEVEL_WORDS = {"half": 50, "max": 100, "maximum": 100, "full": 100, "min": 0, "minimum": 0}
 
@@ -95,14 +143,17 @@ def _fixed(model: type) -> Builder:
 
 
 class IntentParser:
-    def __init__(self, catalog: Catalog) -> None:
+    def __init__(self, catalog: Catalog, installed: InstalledApps | None = None) -> None:
         self.catalog = catalog
+        self.installed = installed
         self._rules = self._build_rules()
 
     def parse(self, transcript: str) -> ParseResult:
         text = normalize(transcript)
         if not text:
             return NotUnderstood(transcript)
+        if _TYPE_START.match(text):
+            return self._type(transcript)
         for rule in self._rules:
             for pattern in rule.patterns:
                 match = pattern.fullmatch(text)
@@ -111,6 +162,14 @@ class IntentParser:
         if _QUESTION.match(text):
             return self._finish({"kind": "ASK_QUESTION", "question": transcript.strip()[:500]})
         return NotUnderstood(transcript)
+
+    def _type(self, transcript: str) -> ParseResult:
+        """From the original transcript, which keeps your capitals and punctuation."""
+        found = _TYPE.search(transcript)
+        text = found["text"].strip().rstrip(".") if found else ""
+        if not text:
+            return Invalid("Type what? For example, say “type hello team”.")
+        return self._finish({"kind": "TYPE_TEXT", "text": text})
 
     @staticmethod
     def _finish(built: dict | ParseResult) -> ParseResult:
@@ -232,15 +291,56 @@ class IntentParser:
                 rf"(?:make {THE}screen |make it )?(?:dimmer|darker)", rf"dim {THE}screen",
             ], change("CHANGE_BRIGHTNESS", "down")),
 
+            # --- media, radios, dark mode ---
+            *self._switches(),
+
+            # --- the keyboard ---
+            *[_rule(action, patterns, lambda _m, a=action: {"kind": "PRESS_KEYS", "action": a})
+              for action, patterns in _KEY_PHRASES.items()],
+
+            # --- a longer session, for working in other apps ---
+            _rule("stay awake", [
+                r"stay (?:awake|with me|on)", r"keep listening", r"(?:start )?work(?:ing)? mode",
+            ], _fixed(s.StayAwake)),
+
+            # --- parts of Windows: before settings ("quick settings") and minimize ---
+            self._surface("start_menu", [
+                rf"(?:(?:{OPEN}|press|click|hit) )?{THE}(?:windows )?start (?:menu|button)",
+                rf"(?:open|show|press) {THE}start", rf"(?:open|press|hit) {THE}windows (?:key|button|menu)",
+            ]),
+            self._surface("search", [rf"{OPEN} {THE}(?:windows )?search", r"windows search"]),
+            self._surface("desktop", [
+                rf"(?:show|show me|go to) {THE}desktop", rf"minimi[sz]e (?:everything|all(?: {THE}windows)?)",
+            ]),
+            self._surface("notifications", [
+                rf"{OPEN} {THE}notifications?(?: cent(?:er|re))?", r"notification cent(?:er|re)",
+            ]),
+            self._surface("quick_settings", [
+                rf"(?:{OPEN} )?{THE}(?:quick settings|action cent(?:er|re))",
+            ]),
+            self._surface("task_view", [
+                rf"(?:{OPEN} )?{THE}task view", rf"show (?:me )?all {THE}(?:windows|apps)",
+            ]),
+
+            # --- Windows Settings ---
+            _rule("settings", [
+                rf"(?:{OPEN} )?{THE}(?:(?P<page>.+?) )?settings(?: app| page| window)?",
+                rf"{OPEN} windows update",
+            ], self._settings),
+
             # --- windows of apps ---
-            _rule("minimize", [r"(?:minimi[sz]e|hide) (?P<target>.+)"], self._app_target("MINIMIZE_APP")),
-            _rule("restore", [
-                r"(?:restore|unminimi[sz]e|maximi[sz]e|bring back|switch to) (?P<target>.+)",
-            ], self._app_target("RESTORE_APP")),
+            _rule("close", [r"(?:close|quit|exit) (?P<target>.+)"], self._close),
+            _rule("minimize", [r"(?:minimi[sz]e|hide) (?P<target>.+)"], self._window("minimize")),
+            _rule("maximize", [r"maximi[sz]e (?P<target>.+)"], self._window("maximize")),
+            _rule("restore", [r"(?:restore|unminimi[sz]e|bring back) (?P<target>.+)"], self._window("restore")),
+            _rule("switch", [r"(?:switch to|focus(?: on)?) (?P<target>.+)"], self._window("switch")),
+            _rule("snap left", [r"(?:snap|move) (?P<target>.+?) (?:to )?(?:the )?left"], self._window("snap_left")),
+            _rule("snap right", [r"(?:snap|move) (?P<target>.+?) (?:to )?(?:the )?right"],
+                  self._window("snap_right")),
 
             # --- open: last, because "go to" / "show" are very general ---
             _rule("open", [
-                r"(?:open|launch|start|run|go to|show me|show|bring up|pull up|take me to|"
+                r"(?:open up|open|launch|start|run|go to|show me|show|bring up|pull up|take me to|"
                 r"navigate to|visit|browse to|load|fire up) (?P<target>.+)",
             ], self._open_target),
             _rule("open (no target)", [r"open|launch|start|run"],
@@ -251,19 +351,92 @@ class IntentParser:
         spoken = match["target"]
         target = self.catalog.resolve(spoken)
         if target is None:
-            return Invalid(f"I don't have “{spoken}” in your list of apps, websites or folders.")
+            return self._open_elsewhere(spoken)
         field = {TargetKind.APP: ("OPEN_APP", "app"),
                  TargetKind.WEBSITE: ("OPEN_WEBSITE", "site"),
                  TargetKind.FOLDER: ("OPEN_FOLDER", "folder")}[target.kind]
         return {"kind": field[0], field[1]: target.id}
 
-    def _app_target(self, kind: str) -> Builder:
-        verb = "minimize" if kind == "MINIMIZE_APP" else "restore"
+    def _open_elsewhere(self, spoken: str) -> dict | ParseResult:
+        """Not in your list: try the apps on this computer, then Settings pages."""
+        found = self.installed.find(spoken) if self.installed is not None else None
+        if found is not None and found.name:
+            return {"kind": "OPEN_INSTALLED_APP", "name": found.name}
+        if found is not None and found.options:
+            return Invalid(f"I found {' and '.join(found.options)}. Which one do you want?")
+        page = settings_page(spoken)
+        if page is not None:
+            return {"kind": "OPEN_SETTINGS", "page": page}
+        if self.installed is None:
+            return Invalid(f"I don't have “{spoken}” in your list of apps, websites or folders.")
+        return Invalid(f"I couldn't find “{spoken}” on this computer.")
+
+    @staticmethod
+    def _surface(surface: str, patterns: list[str]) -> _Rule:
+        return _rule(surface, patterns, lambda _match: {"kind": "OPEN_SURFACE", "surface": surface})
+
+    @staticmethod
+    def _settings(match: re.Match) -> dict | ParseResult:
+        spoken = (match.groupdict().get("page") or "windows").strip()
+        if match.string.endswith("windows update"):
+            spoken = "update"
+        page = settings_page(spoken)
+        return {"kind": "OPEN_SETTINGS", "page": page} if page else Invalid(f"I can't open {spoken} settings.")
+
+    @staticmethod
+    def _switches() -> list[_Rule]:
+        def radio(name: str, words: str) -> list[_Rule]:
+            def build(on: bool) -> Builder:
+                return lambda _m: {"kind": "SET_RADIO", "radio": name, "on": on}
+
+            return [
+                _rule(f"{name} on", [rf"{ON_WORDS} (?:on )?{THE}{words}(?: on)?", rf"{words} on"], build(True)),
+                _rule(f"{name} off", [rf"{OFF_WORDS} (?:off )?{THE}{words}(?: off)?", rf"{words} off"], build(False)),
+            ]
+
+        def media(action: str) -> Builder:
+            return lambda _m: {"kind": "MEDIA_CONTROL", "action": action}
+
+        def theme(dark: bool) -> Builder:
+            return lambda _m: {"kind": "SET_DARK_MODE", "dark": dark}
+
+        music = r"(?:the )?(?:music|song|track|video|media)"
+        return [
+            *radio("bluetooth", BLUETOOTH), *radio("wifi", WIFI),
+            _rule("dark mode", [
+                r"(?:turn on|enable|use|switch to|go to) (?:the )?dark (?:mode|theme)", r"dark mode(?: on)?",
+                r"(?:turn off|disable) (?:the )?light (?:mode|theme)",
+            ], theme(True)),
+            _rule("light mode", [
+                r"(?:turn on|enable|use|switch to|go to) (?:the )?light (?:mode|theme)", r"light mode(?: on)?",
+                r"(?:turn off|disable) (?:the )?dark (?:mode|theme)", r"dark mode off",
+            ], theme(False)),
+            _rule("play or pause", [rf"(?:play|pause|resume)(?: {music})?", rf"play some music"], media("play_pause")),
+            _rule("next track", [r"next (?:song|track|video)", r"skip(?: this)?(?: song| track| video)?"], media("next")),
+            _rule("previous track", [r"previous (?:song|track|video)", r"last (?:song|track|video)"], media("previous")),
+            _rule("stop media", [rf"stop {music}", rf"stop playing(?: {music})?"], media("stop")),
+        ]
+
+    def _target_of(self, spoken: str) -> str:
+        """``THIS_WINDOW``, the id of an app in your list, or the words you said."""
+        if re.fullmatch(_THIS, spoken):
+            return THIS_WINDOW
+        target = self.catalog.resolve(spoken)
+        return target.id if target is not None and target.kind is TargetKind.APP else spoken
+
+    def _close(self, match: re.Match) -> dict | ParseResult:
+        return {"kind": "CLOSE_APP", "target": self._target_of(match["target"])}
+
+    def _window(self, action: str) -> Builder:
+        verbs = {"minimize": "minimize", "restore": "restore"}
 
         def build(match: re.Match) -> dict | ParseResult:
-            target = self.catalog.resolve(match["target"])
-            if target is None or target.kind is not TargetKind.APP:
-                return Invalid(f"I can only {verb} apps from your app list.")
-            return {"kind": kind, "app": target.id}
+            spoken = match["target"]
+            target = self.catalog.resolve(spoken)
+            if target is not None and target.kind is not TargetKind.APP:
+                return Invalid(f"I can only {verbs.get(action, 'move')} apps.")
+            if target is not None and action in verbs:  # your list says which program it is
+                return {"kind": f"{action.upper()}_APP", "app": target.id}
+            return {"kind": "CONTROL_WINDOW", "action": action, "target": self._target_of(spoken)}
 
         return build

@@ -18,6 +18,7 @@ runs after activation.
 from __future__ import annotations
 
 import logging
+
 import threading
 import time
 from collections.abc import Callable
@@ -39,7 +40,7 @@ from drivion.core.services import CrashHandler, ThreadedService
 
 log = logging.getLogger(__name__)
 
-DEFAULT_PHRASE = "Wake up, Drivion"
+DEFAULT_PHRASE = "Hey Drivion"
 
 
 class WakeWordUnavailable(Exception):

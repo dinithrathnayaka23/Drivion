@@ -45,8 +45,10 @@ class UISettings(_Section):
 
 class WakeWordSettings(_Section):
     enabled: bool = True
-    engine: Literal["openwakeword"] = "openwakeword"
-    # A built-in model name ("hey_jarvis") or the path to a custom .onnx model.
+    # "whisper" wakes on "Hey Drivion" with the speech model, without training.
+    # "openwakeword" uses `model` below and needs less CPU while you talk.
+    engine: Literal["whisper", "openwakeword"] = "whisper"
+    # For openwakeword: a built-in model name or the path to a custom .onnx model.
     model: str = Field(default="hey_jarvis", min_length=1)
     # Phrase shown in the dashboard; defaults to the built-in model's phrase.
     phrase: str | None = None
@@ -82,7 +84,7 @@ class FaceSettings(_Section):
     # that off, and then a photo of you can unlock Drivion (see docs/FACE.md).
     liveness_mode: Literal["none", "challenge"] = "challenge"
     liveness_challenges: int = Field(default=2, ge=1, le=4)
-    liveness_timeout_s: float = Field(default=6.0, ge=3.0, le=15.0)  # for each head turn
+    liveness_timeout_s: float = Field(default=8.0, ge=3.0, le=15.0)  # for each head turn
     # Required change in head turn. 0.30 is over twice what tilting a photo gave (0.126).
     liveness_turn: float = Field(default=0.30, ge=0.2, le=0.6)
     camera_mirrored: bool = False  # set true if "turn left" is always seen as right
@@ -108,6 +110,8 @@ class VoiceSettings(_Section):
     max_command_s: float = Field(default=15.0, ge=3.0, le=60.0)
     # No speech for this long while ACTIVE -> back to standby.
     command_timeout_s: float = Field(default=20.0, ge=3.0, le=300.0)
+    # After "stay awake": silence this long still returns to standby.
+    work_timeout_s: float = Field(default=600.0, ge=60.0, le=3600.0)
     # Speech output (Windows voices).
     tts_engine: Literal["windows", "none"] = "windows"
     tts_voice: str | None = None  # part of a voice name, e.g. "Zira"; omit for default
@@ -188,7 +192,7 @@ class CommandsSettings(_Section):
         "explorer": AppEntry(aliases=["file explorer", "windows explorer", "files"],
                              launch="explorer.exe", process="explorer.exe"),
         "notepad": AppEntry(launch="notepad.exe", process="Notepad.exe"),
-        "calculator": AppEntry(aliases=["calc"], launch="calc.exe", process="CalculatorApp.exe"),
+        "calculator": AppEntry(aliases=["calculator", "calc"], launch="calc.exe", process="CalculatorApp.exe"),
     }
     websites: dict[str, str] = {
         "youtube": "https://www.youtube.com",
