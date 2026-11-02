@@ -54,10 +54,12 @@ class AssistantResponder:
         llm: LLMAssistant | None = None,
         on_thinking: Callable[[], None] = lambda: None,
         installed: InstalledApps | None = None,
+        on_stay_awake: Callable[[], None] = lambda: None,
     ) -> None:
         self._catalog = catalog
         self._parser = IntentParser(catalog, installed)
         self._on_go_to_sleep = on_go_to_sleep
+        self._on_stay_awake = on_stay_awake
         self._wake_phrase = wake_phrase
         self._executor = executor
         self._cancel_scheduled = cancel_scheduled
@@ -121,6 +123,9 @@ class AssistantResponder:
             case s.GoToSleep():
                 self._on_go_to_sleep()
                 return f"Going to sleep. Say “{self._wake_phrase}” when you need me.", Outcome.SUCCESS
+            case s.StayAwake():
+                self._on_stay_awake()
+                return "Okay, I'll keep listening. Say go to sleep when you're done.", Outcome.SUCCESS
             case s.AskQuestion(question=question):
                 if self._llm is None:
                     return QUESTION_REPLY, Outcome.REJECTED
@@ -186,8 +191,9 @@ class AssistantResponder:
         example_app = " or ".join(examples) or "an app"
         text = (
             f"You can say things like: open {example_app}, set the volume to 50 percent, "
-            "turn the brightness down, open bluetooth settings, open the start menu, "
-            "take a screenshot, or lock the computer. "
+            "turn off bluetooth, close this window, type hello, press enter, save this, "
+            "open the start menu, take a screenshot, or lock the computer. "
+            "Say stay awake to keep me listening while you work. "
             "Say repeat to hear my last answer, or go to sleep when you're done."
         )
         if self._executor is None:

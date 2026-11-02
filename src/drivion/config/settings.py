@@ -110,6 +110,8 @@ class VoiceSettings(_Section):
     max_command_s: float = Field(default=15.0, ge=3.0, le=60.0)
     # No speech for this long while ACTIVE -> back to standby.
     command_timeout_s: float = Field(default=20.0, ge=3.0, le=300.0)
+    # After "stay awake": silence this long still returns to standby.
+    work_timeout_s: float = Field(default=600.0, ge=60.0, le=3600.0)
     # Speech output (Windows voices).
     tts_engine: Literal["windows", "none"] = "windows"
     tts_voice: str | None = None  # part of a voice name, e.g. "Zira"; omit for default
@@ -190,7 +192,7 @@ class CommandsSettings(_Section):
         "explorer": AppEntry(aliases=["file explorer", "windows explorer", "files"],
                              launch="explorer.exe", process="explorer.exe"),
         "notepad": AppEntry(launch="notepad.exe", process="Notepad.exe"),
-        "calculator": AppEntry(aliases=["calc"], launch="calc.exe", process="CalculatorApp.exe"),
+        "calculator": AppEntry(aliases=["calculator", "calc"], launch="calc.exe", process="CalculatorApp.exe"),
     }
     websites: dict[str, str] = {
         "youtube": "https://www.youtube.com",

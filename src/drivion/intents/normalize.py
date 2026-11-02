@@ -42,6 +42,7 @@ _LEADING = [
     "hey", "hi", "hello", "please", "can you", "could you",
     "would you", "will you", "would you please", "could you please", "can you please",
     "i want you to", "i would like you to", "i need you to", "kindly",
+    "just", "just to", "try to", "now", "then",
 ]
 _TRAILING = ["please", "for me", "thanks", "thank you", "now"]
 # "okay" alone means "yes"; only strip it when more words follow.

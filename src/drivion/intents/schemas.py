@@ -18,7 +18,7 @@ from typing import Annotated, ClassVar, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from drivion.intents.system import SETTINGS_PAGES, SHELL_SURFACES
+from drivion.intents.system import KEY_ACTIONS, MEDIA_ACTIONS, RADIOS, SETTINGS_PAGES, SHELL_SURFACES
 
 Percent = Annotated[int, Field(ge=0, le=100)]
 Step = Annotated[int, Field(ge=1, le=100)]
@@ -107,6 +107,46 @@ class OpenSurface(_Intent):
     surface: Literal[tuple(SHELL_SURFACES)]
 
 
+class CloseApp(_Intent):
+    """A normal close: the app can still ask to save. Never a forced one."""
+
+    kind: Literal["CLOSE_APP"] = "CLOSE_APP"
+    target: Name
+
+
+class ControlWindow(_Intent):
+    kind: Literal["CONTROL_WINDOW"] = "CONTROL_WINDOW"
+    action: Literal["minimize", "maximize", "restore", "switch", "snap_left", "snap_right"]
+    target: Name
+
+
+class SetRadio(_Intent):
+    kind: Literal["SET_RADIO"] = "SET_RADIO"
+    radio: Literal[tuple(RADIOS)]
+    on: bool
+
+
+class SetDarkMode(_Intent):
+    kind: Literal["SET_DARK_MODE"] = "SET_DARK_MODE"
+    dark: bool
+
+
+class MediaControl(_Intent):
+    kind: Literal["MEDIA_CONTROL"] = "MEDIA_CONTROL"
+    action: Literal[tuple(MEDIA_ACTIONS)]
+
+
+class TypeText(_Intent):
+    kind: Literal["TYPE_TEXT"] = "TYPE_TEXT"
+    text: Annotated[str, Field(min_length=1, max_length=500)]
+    invalid_message: ClassVar[str] = "I can type up to 500 characters at a time."
+
+
+class PressKeys(_Intent):
+    kind: Literal["PRESS_KEYS"] = "PRESS_KEYS"
+    action: Literal[tuple(KEY_ACTIONS)]
+
+
 class MinimizeApp(_Intent):
     kind: Literal["MINIMIZE_APP"] = "MINIMIZE_APP"
     app: Name
@@ -150,6 +190,12 @@ class AskQuestion(_Intent):
     question: Annotated[str, Field(min_length=1, max_length=500)]
 
 
+class StayAwake(_Intent):
+    """Keep listening for longer, while you work in other apps."""
+
+    kind: Literal["STAY_AWAKE"] = "STAY_AWAKE"
+
+
 class Help(_Intent):
     kind: Literal["HELP"] = "HELP"
 
@@ -186,8 +232,9 @@ Intent = Annotated[
     Union[
         SetVolume, ChangeVolume, Mute, Unmute, SetBrightness, ChangeBrightness,
         OpenApp, OpenWebsite, OpenFolder, OpenInstalledApp, OpenSettings, OpenSurface,
+        CloseApp, ControlWindow, SetRadio, SetDarkMode, MediaControl, TypeText, PressKeys,
         MinimizeApp, RestoreApp, LockComputer, TakeScreenshot, SleepComputer, RestartComputer, ShutdownComputer,
-        AskQuestion, Help, Repeat, Cancel, Confirm, Deny, Greet, GoToSleep,
+        AskQuestion, StayAwake, Help, Repeat, Cancel, Confirm, Deny, Greet, GoToSleep,
     ],
     Field(discriminator="kind"),
 ]
@@ -234,6 +281,18 @@ def describe(intent: _Intent, name_for: Callable[[str], str] = _plain) -> str:
             return f"open {SETTINGS_PAGES[p][1]}"
         case OpenSurface(surface=name):
             return f"open {SHELL_SURFACES[name]}"
+        case CloseApp(target=t):
+            return f"close {name_for(t)}"
+        case ControlWindow(action=a, target=t):
+            return f"{a.replace('_', ' ')} {name_for(t)}"
+        case SetRadio(radio=r, on=on):
+            return f"turn {RADIOS[r]} {'on' if on else 'off'}"
+        case SetDarkMode(dark=dark):
+            return f"switch to {'dark' if dark else 'light'} mode"
+        case TypeText():
+            return "type that"
+        case PressKeys(action=a):
+            return f"press {a.replace('_', ' ')}"
         case MinimizeApp(app=a):
             return f"minimize {name_for(a)}"
         case RestoreApp(app=a):

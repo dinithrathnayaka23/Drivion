@@ -35,6 +35,7 @@ camera_mirrored = false     # true if your camera mirrors the picture
 verification_timeout_s = 10.0  # 4..60; no face match in time = access denied
 
 [voice]
+work_timeout_s = 600.0      # 60..3600; after "stay awake", silence this long returns to standby
 enabled = true              # listen for spoken commands while the dashboard is open
 stt_model = "base.en"       # "tiny.en" (fastest), "base.en" or "small.en" (most accurate)
 stt_threads = 0             # CPU threads for recognition; 0 = automatic

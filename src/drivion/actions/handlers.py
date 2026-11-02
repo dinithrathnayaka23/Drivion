@@ -18,18 +18,30 @@ from datetime import datetime
 from pathlib import Path
 
 from drivion.actions.registry import ActionRegistry, ActionResult, Risk
+from drivion.actions.window_finder import WindowSearch, find_windows, keyboard_refusal
 from drivion.actions.windows.audio import VolumeControl
 from drivion.actions.windows.desktop import Desktop
 from drivion.actions.windows.display import BrightnessControl, BrightnessUnsupported
 from drivion.actions.windows.power import PowerControl
+from drivion.actions.windows.radios import RadioControl, RadioUnavailable
 from drivion.actions.windows.screen import Screenshotter
 from drivion.actions.windows.start_apps import apps_folder_target
+from drivion.actions.windows.theme import ThemeControl
 from drivion.intents import schemas as s
-from drivion.intents.system import SETTINGS_PAGES, SHELL_SURFACES
+from drivion.intents.system import (
+    KEY_ACTIONS,
+    MEDIA_ACTIONS,
+    RADIOS,
+    SETTINGS_PAGES,
+    SHELL_SURFACES,
+    THIS_WINDOW,
+)
 
 log = logging.getLogger(__name__)
 
 APP_WINDOW_WAIT_S = 5.0
+CLOSE_WAIT_S = 3.0
+RADIO_WAIT_S = 3.0
 SLEEP_DELAY_S = 3.0  # lets Drivion finish saying it's going to sleep
 
 
@@ -40,6 +52,8 @@ class Backends:
     desktop: Desktop
     screen: Screenshotter
     power: PowerControl
+    radios: RadioControl | None = None
+    theme: ThemeControl | None = None
 
 
 def wait_until(condition: Callable[[], bool], timeout_s: float, interval_s: float = 0.2,
@@ -124,10 +138,12 @@ class PowerScheduler:
 
 
 def build_registry(backends: Backends, commands, actions, names: Callable[[str], str],
-                   power: PowerScheduler, wait=wait_until, installed=None) -> ActionRegistry:
+                   power: PowerScheduler, wait=wait_until, installed=None,
+                   on_locked: Callable[[], None] = lambda: None) -> ActionRegistry:
     """``commands``/``actions``: the [commands] and [actions] config sections.
 
     ``installed``: the ``InstalledApps`` list. Without it, only allowlisted apps open.
+    ``on_locked``: called after locking, so Drivion stops listening too.
     """
     b = backends
     registry = ActionRegistry()
@@ -249,6 +265,125 @@ def build_registry(backends: Backends, commands, actions, names: Callable[[str],
     registry.register("OPEN_WEBSITE", "Open an allowlisted website", Risk.LOW, open_website)
     registry.register("OPEN_FOLDER", "Open an allowlisted folder", Risk.LOW, open_folder)
 
+    # ----- any open window --------------------------------------------------------------
+
+    def windows_for(target: str) -> WindowSearch:
+        if target == THIS_WINDOW:
+            window = b.desktop.keyboard_target()
+            return WindowSearch((window,) if window else ())
+        entry = commands.apps.get(target)
+        windows = b.desktop.list_windows()
+        found = find_windows(windows, target, entry.process if entry else None)
+        if entry is not None and not found.windows:
+            # A minimized modern app can hide its program name, but not its title.
+            for alias in (target, *entry.aliases):
+                found = find_windows(windows, alias)
+                if found.windows:
+                    return found
+        return found
+
+    def not_found(target: str, search: WindowSearch) -> ActionResult:
+        if search.options:
+            return ActionResult(False, f"I found {' and '.join(search.options)}. Which one do you mean?")
+        if target == THIS_WINDOW:
+            return ActionResult(False, "I can't tell which window you mean.")
+        return ActionResult(False, f"{names(target)} isn't open.")
+
+    def close_app(intent: s.CloseApp) -> ActionResult:
+        search = windows_for(intent.target)
+        if not search.windows:
+            return not_found(intent.target, search)
+        name = search.windows[0].app_name if intent.target == THIS_WINDOW else names(intent.target)
+        for window in search.windows:
+            b.desktop.close(window.hwnd)
+        if wait(lambda: not any(b.desktop.is_open(w.hwnd) for w in search.windows), CLOSE_WAIT_S):
+            return ActionResult(True, f"{name} closed.", verified=True)
+        return ActionResult(True, f"I've asked {name} to close. It may want you to save first.")
+
+    def control_window(intent: s.ControlWindow) -> ActionResult:
+        search = windows_for(intent.target)
+        if not search.windows:
+            return not_found(intent.target, search)
+        first = search.windows[0]
+        name = first.app_name if intent.target == THIS_WINDOW else names(intent.target)
+        action = intent.action
+        if action in ("minimize", "restore"):
+            for window in search.windows:
+                (b.desktop.minimize if action == "minimize" else b.desktop.restore)(window.hwnd)
+            done = wait(lambda: all(b.desktop.is_minimized(w.hwnd) == (action == "minimize")
+                                    for w in search.windows), 1.0)
+            if not done:
+                return ActionResult(False, f"Windows didn't {action} {name}.")
+            return ActionResult(True, f"{name} {action}d.", verified=True)
+        if action == "maximize":
+            b.desktop.maximize(first.hwnd)
+            return ActionResult(True, f"{name} maximized.")
+        if action == "switch":
+            if not b.desktop.focus(first.hwnd):
+                return ActionResult(False, f"Windows didn't let me switch to {name}.")
+            return ActionResult(True, f"Switched to {name}.", verified=True)
+        if not b.desktop.snap(first.hwnd, action == "snap_left"):
+            return ActionResult(False, f"Windows didn't let me move {name}.")
+        return ActionResult(True, f"{name} moved to the {action.removeprefix('snap_')}.")
+
+    registry.register("CLOSE_APP", "Ask an open app to close", Risk.MEDIUM, close_app)
+    registry.register("CONTROL_WINDOW", "Move or switch to an open window", Risk.LOW, control_window)
+
+    # ----- the keyboard: never in a command window ---------------------------------------
+
+    def with_keyboard(send: Callable[[], None], reply: str) -> ActionResult:
+        target = b.desktop.keyboard_target()
+        refusal = keyboard_refusal(target)
+        if refusal:
+            return ActionResult(False, refusal)
+        try:
+            send()
+        except OSError:
+            return ActionResult(False, "Windows blocked the keys. That window may be running as administrator.")
+        return ActionResult(True, reply)
+
+    registry.register("TYPE_TEXT", "Type text into the active window", Risk.MEDIUM,
+                      lambda i: with_keyboard(lambda: b.desktop.type_text(i.text), "Typed."))
+    registry.register("PRESS_KEYS", "Press a fixed key or shortcut", Risk.MEDIUM,
+                      lambda i: with_keyboard(lambda: b.desktop.press(KEY_ACTIONS[i.action][0]),
+                                              KEY_ACTIONS[i.action][1]))
+
+    def media(intent: s.MediaControl) -> ActionResult:
+        key, reply = MEDIA_ACTIONS[intent.action]
+        b.desktop.press((key,))
+        return ActionResult(True, reply)
+
+    registry.register("MEDIA_CONTROL", "Play, pause or skip media", Risk.LOW, media)
+
+    # ----- Windows settings that have a direct control -----------------------------------
+
+    def set_radio(intent: s.SetRadio) -> ActionResult:
+        name = RADIOS[intent.radio]
+        word = "on" if intent.on else "off"
+        if b.radios is None:
+            return ActionResult(False, f"I can't change {name} on this computer.")
+        try:
+            b.radios.set_on(intent.radio, intent.on)
+            changed = wait(lambda: b.radios.is_on(intent.radio) == intent.on, RADIO_WAIT_S)
+        except RadioUnavailable:
+            return ActionResult(False, f"I can't change {name} on this computer.")
+        if not changed:
+            return ActionResult(False, f"Windows didn't turn {name} {word}.")
+        return ActionResult(True, f"{name} is {word}.", verified=True)
+
+    def set_dark_mode(intent: s.SetDarkMode) -> ActionResult:
+        word = "Dark" if intent.dark else "Light"
+        if b.theme is None:
+            return ActionResult(False, "I can't change the theme on this computer.")
+        b.theme.set_dark(intent.dark)
+        if b.theme.is_dark() != intent.dark:
+            return ActionResult(False, f"Windows didn't switch to {word.lower()} mode.")
+        return ActionResult(True, f"{word} mode is on.", verified=True)
+
+    # MEDIUM: Wi-Fi off also cuts Drivion's AI.
+    registry.register("SET_RADIO", "Turn Bluetooth or Wi-Fi on or off", Risk.MEDIUM, set_radio)
+    registry.register("SET_DARK_MODE", "Switch dark or light mode", Risk.LOW, set_dark_mode)
+
     # ----- app windows ------------------------------------------------------------------
 
     def window_action(intent, minimize: bool) -> ActionResult:
@@ -256,7 +391,7 @@ def build_registry(backends: Backends, commands, actions, names: Callable[[str],
         name = names(intent.app)
         if entry is None or not entry.process:
             return ActionResult(False, f"I don't know which windows belong to {name}.")
-        windows = b.desktop.app_windows(entry.process)
+        windows = b.desktop.app_windows(entry.process) or [w.hwnd for w in windows_for(intent.app).windows]
         if not windows:
             return ActionResult(False, f"{name} isn't open.")
         for hwnd in windows:
@@ -283,6 +418,7 @@ def build_registry(backends: Backends, commands, actions, names: Callable[[str],
     def lock(_intent) -> ActionResult:
         if not b.desktop.lock():
             return ActionResult(False, "Windows didn't lock.")
+        on_locked()
         return ActionResult(True, "Locking the computer.", verified=True)
 
     registry.register("TAKE_SCREENSHOT", "Save a screenshot", Risk.LOW, screenshot)

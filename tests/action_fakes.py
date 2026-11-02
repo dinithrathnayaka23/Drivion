@@ -48,7 +48,10 @@ class FakeDesktop:
         self.windows = windows or {}          # process -> {hwnd: minimized?}
         self.openable = openable              # None = everything opens
         self.opened, self.locked = [], 0
-        self.surfaces = []
+        self.surfaces, self.pressed, self.typed = [], [], []
+        self.open_windows = []                # AppWindow, most recently used first
+        self.closed, self.focused, self.snapped, self.maximized = [], [], [], []
+        self.can_focus, self.closes_ok, self.keys_blocked = True, True, False
         self.lock_ok = lock_ok
         self.starts_window = {}               # launch target -> process to "start"
 
@@ -61,6 +64,37 @@ class FakeDesktop:
 
     def open_surface(self, surface):
         self.surfaces.append(surface)
+
+    def press(self, keys):
+        self.pressed.append(keys)
+
+    def type_text(self, text):
+        if self.keys_blocked:
+            raise OSError("blocked")
+        self.typed.append(text)
+
+    def list_windows(self):
+        return list(self.open_windows)
+
+    def keyboard_target(self):
+        return self.open_windows[0] if self.open_windows else None
+
+    def focus(self, hwnd):
+        self.focused.append(hwnd)
+        return self.can_focus
+
+    def snap(self, hwnd, left):
+        self.snapped.append((hwnd, left))
+        return self.can_focus
+
+    def maximize(self, hwnd):
+        self.maximized.append(hwnd)
+
+    def close(self, hwnd):
+        self.closed.append(hwnd)
+
+    def is_open(self, hwnd):
+        return self.closes_ok is False or hwnd not in self.closed
 
     def lock(self):
         self.locked += 1
@@ -83,6 +117,34 @@ class FakeDesktop:
 
     def is_minimized(self, hwnd):
         return self._find(hwnd)[hwnd]
+
+
+class FakeRadios:
+    def __init__(self, state=None, follows=True, present=True):
+        self.state = state or {"bluetooth": True, "wifi": True}
+        self.follows, self.present = follows, present
+
+    def is_on(self, radio):
+        return self.state[radio]
+
+    def set_on(self, radio, on):
+        from drivion.actions.windows.radios import RadioUnavailable
+
+        if not self.present:
+            raise RadioUnavailable("no radio")
+        if self.follows:
+            self.state[radio] = on
+
+
+class FakeTheme:
+    def __init__(self, dark=False):
+        self.dark = dark
+
+    def is_dark(self):
+        return self.dark
+
+    def set_dark(self, dark):
+        self.dark = dark
 
 
 class FakeScreen:

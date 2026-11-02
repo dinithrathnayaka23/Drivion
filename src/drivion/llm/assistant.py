@@ -14,8 +14,8 @@ are the rule:
 3. it must validate through ``INTENT_ADAPTER`` (types and ranges);
 4. any app, website or folder must be in your allowlist.
 
-Installed apps outside your allowlist aren't in ``LLM_ACTIONS``: only your own
-spoken command can open those.
+Installed apps outside your allowlist aren't in ``LLM_ACTIONS``, and neither are
+typing, pressing keys or closing windows: only your own spoken command can do those.
 
 A reply that fails any check is unusable, and the next provider is tried.
 Even a valid action is still only a *request*: it goes through the
@@ -41,7 +41,7 @@ LLM_ACTIONS: tuple[type, ...] = (
     s.SetVolume, s.ChangeVolume, s.Mute, s.Unmute, s.SetBrightness, s.ChangeBrightness,
     s.OpenApp, s.OpenWebsite, s.OpenFolder, s.OpenSettings, s.OpenSurface, s.MinimizeApp, s.RestoreApp,
     s.LockComputer, s.TakeScreenshot, s.SleepComputer, s.RestartComputer, s.ShutdownComputer,
-    s.Help, s.GoToSleep,
+    s.SetRadio, s.SetDarkMode, s.MediaControl, s.Help, s.GoToSleep,
 )
 _ALLOWED_KINDS = {m.model_fields["kind"].default for m in LLM_ACTIONS}
 MAX_ANSWER_CHARS = 600
@@ -97,6 +97,7 @@ Rules:
 - Only use an action if it clearly matches the request; if unsure, answer instead.
 - You cannot run programs, commands, scripts or anything not listed. If asked, say so in an answer.
 - To open an app that isn't listed, tell the user to say "open" and the app's name.
+- You can't type, press keys or close windows. Tell the user to say what they want directly, for example "type hello".
 - SLEEP_COMPUTER, RESTART_COMPUTER and SHUTDOWN_COMPUTER are only for explicit requests; the user will be asked to confirm.
 - GO_TO_SLEEP means the assistant itself goes to standby, not the computer.
 - Answers: at most two short sentences, plain text, no markdown, lists or emoji.

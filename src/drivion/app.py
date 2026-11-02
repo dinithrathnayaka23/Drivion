@@ -354,10 +354,17 @@ def _run_event_loop(app, config: AppConfig, secrets, simulate: bool, name: str,
         config, controller, feed, standby_services
     )
     speaker = _build_speaker(config, session_services)
+    listeners: list = []
+
+    def stay_awake() -> None:
+        for listener in listeners:
+            listener.keep_listening(config.voice.work_timeout_s)
+        controller.minimize_window_requested.emit()  # out of the way of your work
+
     processor = _build_command_processor(config, controller, feed, speaker, wake_phrase,
-                                         secrets=secrets)
+                                         secrets=secrets, on_stay_awake=stay_awake)
     voice_input, speech_problem = _register_speech(
-        config, controller, feed, speaker, processor, active_services
+        config, controller, feed, speaker, processor, active_services, listeners
     )
     face_problem = _register_face(config, controller, feed, speaker, verifying_services)
 
@@ -582,10 +589,12 @@ def _windows_backends():
     from drivion.actions.windows.desktop import WindowsDesktop
     from drivion.actions.windows.display import WmiBrightness
     from drivion.actions.windows.power import WindowsPower
+    from drivion.actions.windows.radios import WindowsRadios
     from drivion.actions.windows.screen import GdiScreenshotter
+    from drivion.actions.windows.theme import WindowsTheme
 
     return Backends(PycawVolume(), WmiBrightness(), WindowsDesktop(), GdiScreenshotter(),
-                    WindowsPower())
+                    WindowsPower(), WindowsRadios(), WindowsTheme())
 
 
 def _build_llm(config: AppConfig, secrets, catalog, transport=None):
@@ -608,7 +617,8 @@ def _build_llm(config: AppConfig, secrets, catalog, transport=None):
 
 
 def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_phrase: str,
-                             backends=None, secrets=None, llm_transport=None, installed=None):
+                             backends=None, secrets=None, llm_transport=None, installed=None,
+                             on_stay_awake=lambda: None):
     """Transcript -> intent -> (safety-checked action) -> reply.
 
     Shared by voice input and the simulation menu. ``backends`` defaults to
@@ -635,7 +645,9 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
     power = PowerScheduler(backends.power, actions.power_delay_s,
                            hibernate=actions.sleep_method == "hibernate", notify=speaker.say)
     registry = build_registry(backends, config.commands, actions, catalog.spoken_name, power,
-                              installed=installed)
+                              installed=installed,
+                              # Locked means locked: Drivion stops listening as well.
+                              on_locked=lambda: controller.post_event(Event(EventType.SLEEP_REQUESTED, "lock")))
     executor = SafeExecutor(
         registry,
         # Actions only while unlocked (ACTIVE). Read from the listener thread;
@@ -653,6 +665,7 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
         executor=executor,
         cancel_scheduled=power.cancel,
         installed=installed,
+        on_stay_awake=on_stay_awake,
         llm=_build_llm(config, secrets, catalog, llm_transport) if secrets is not None else None,
         on_thinking=lambda: feed.set_voice_status(VoiceStatus.THINKING),
     )
@@ -660,7 +673,7 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
 
 
 def _register_speech(
-    config: AppConfig, controller, feed, speaker, processor, active_services
+    config: AppConfig, controller, feed, speaker, processor, active_services, listeners=None
 ) -> tuple[bool, str | None]:
     """Build the command listener for ACTIVE. Returns (registered?, problem to report)."""
     from drivion.audio.source import MicrophoneSource
@@ -685,7 +698,7 @@ def _register_speech(
         speaker.say(TIMEOUT_REPLY)
         controller.post_event(Event(EventType.COMMAND_TIMEOUT, "command listener"))
 
-    active_services.register(CommandListenerService(
+    listener = CommandListenerService(
         source_factory=lambda: MicrophoneSource(config.wake_word.input_device, VAD_FRAME_SAMPLES),
         vad_factory=SileroVad,
         # Loaded in the listener thread on first activation, then kept.
@@ -703,7 +716,10 @@ def _register_speech(
         on_microphone=lambda state: feed.set_device(Device.MICROPHONE, state),
         on_status=feed.set_voice_status,
         on_crash=controller.service_crashed,
-    ))
+    )
+    active_services.register(listener)
+    if listeners is not None:
+        listeners.append(listener)
     log.info("Voice commands ready (model %s)", voice.stt_model)
     return True, None
 

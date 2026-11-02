@@ -219,6 +219,24 @@ def _try_installed_apps(config: AppConfig, models: Path) -> str:
     return f"{len(InstalledApps(list_start_apps))} apps can be opened by voice"
 
 
+def _try_radios(config: AppConfig, models: Path) -> str:
+    from drivion.actions.windows.radios import RadioUnavailable, WindowsRadios
+
+    states = []
+    for radio in ("bluetooth", "wifi"):
+        try:
+            states.append(f"{radio} {'on' if WindowsRadios().is_on(radio) else 'off'}")
+        except RadioUnavailable:
+            states.append(f"no {radio}")
+    return ", ".join(states)
+
+
+def _try_window_list(config: AppConfig, models: Path) -> str:
+    from drivion.actions.windows.desktop import WindowsDesktop
+
+    return f"{len(WindowsDesktop().list_windows())} open windows found"
+
+
 def _try_volume(config: AppConfig, models: Path) -> str:
     from drivion.actions.windows.audio import PycawVolume
 
@@ -246,6 +264,7 @@ SELF_TESTS = {
     "Wake word engine": _try_wake_word, "Voice activity": _try_voice_activity,
     "Speech recognition": _try_speech, "Face engine": _try_face,
     "Windows voices": _try_windows_voice, "Installed apps": _try_installed_apps,
+    "Bluetooth and Wi-Fi": _try_radios, "Open windows": _try_window_list,
     "Volume control": _try_volume,
     "HTTPS": _try_https, "Dashboard": _try_dashboard,
 }

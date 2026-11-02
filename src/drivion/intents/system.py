@@ -59,6 +59,59 @@ SHELL_SURFACES: dict[str, str] = {
     "task_view": "task view",
 }
 
+MEDIA_ACTIONS: dict[str, tuple[int, str]] = {  # id -> (Windows media key, reply)
+    "play_pause": (0xB3, "Okay."),
+    "next": (0xB0, "Next track."),
+    "previous": (0xB1, "Previous track."),
+    "stop": (0xB2, "Stopped."),
+}
+
+_CTRL, _SHIFT, _ALT = 0x11, 0x10, 0x12
+_LEFT, _RIGHT, _UP, _DOWN = 0x25, 0x27, 0x26, 0x28
+_PAGE_UP, _PAGE_DOWN, _END, _HOME = 0x21, 0x22, 0x23, 0x24
+_TAB, _ENTER, _ESCAPE, _BACKSPACE, _SPACE = 0x09, 0x0D, 0x1B, 0x08, 0x20
+_F5, _F11, _PLUS, _MINUS = 0x74, 0x7A, 0xBB, 0xBD
+
+# id -> (keys pressed together, reply). A fixed list: anything else can't be pressed.
+KEY_ACTIONS: dict[str, tuple[tuple[int, ...], str]] = {
+    "enter": ((_ENTER,), "Pressed enter."),
+    "tab": ((_TAB,), "Pressed tab."),
+    "escape": ((_ESCAPE,), "Pressed escape."),
+    "backspace": ((_BACKSPACE,), "Pressed backspace."),
+    "space": ((_SPACE,), "Pressed space."),
+    "arrow_up": ((_UP,), "Up."),
+    "arrow_down": ((_DOWN,), "Down."),
+    "arrow_left": ((_LEFT,), "Left."),
+    "arrow_right": ((_RIGHT,), "Right."),
+    "scroll_up": ((_PAGE_UP,), "Scrolling up."),
+    "scroll_down": ((_PAGE_DOWN,), "Scrolling down."),
+    "top": ((_CTRL, _HOME), "Going to the top."),
+    "bottom": ((_CTRL, _END), "Going to the bottom."),
+    "save": ((_CTRL, ord("S")), "Saving."),
+    "copy": ((_CTRL, ord("C")), "Copied."),
+    "paste": ((_CTRL, ord("V")), "Pasted."),
+    "cut": ((_CTRL, ord("X")), "Cut."),
+    "undo": ((_CTRL, ord("Z")), "Undone."),
+    "redo": ((_CTRL, ord("Y")), "Redone."),
+    "select_all": ((_CTRL, ord("A")), "Selected everything."),
+    "find": ((_CTRL, ord("F")), "Opening find."),
+    "new_tab": ((_CTRL, ord("T")), "New tab."),
+    "close_tab": ((_CTRL, ord("W")), "Closing the tab."),
+    "reopen_tab": ((_CTRL, _SHIFT, ord("T")), "Reopening the tab."),
+    "next_tab": ((_CTRL, _TAB), "Next tab."),
+    "previous_tab": ((_CTRL, _SHIFT, _TAB), "Previous tab."),
+    "address_bar": ((_CTRL, ord("L")), "Address bar."),
+    "back": ((_ALT, _LEFT), "Going back."),
+    "forward": ((_ALT, _RIGHT), "Going forward."),
+    "refresh": ((_F5,), "Refreshing."),
+    "zoom_in": ((_CTRL, _PLUS), "Zooming in."),
+    "zoom_out": ((_CTRL, _MINUS), "Zooming out."),
+    "full_screen": ((_F11,), "Full screen."),
+}
+
+RADIOS = {"bluetooth": "Bluetooth", "wifi": "Wi-Fi"}
+THIS_WINDOW = "this"  # the target meaning "the window I'm using"
+
 _PAGE_ALIASES = {normalize(alias): page for page, (_, _, aliases) in SETTINGS_PAGES.items() for alias in aliases}
 
 

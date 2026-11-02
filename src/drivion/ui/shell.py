@@ -67,6 +67,7 @@ class Shell(QObject):
 
         controller.state_changed.connect(self._on_state_changed)
         controller.raise_window_requested.connect(self.window.show_and_raise)
+        controller.minimize_window_requested.connect(self.window.showMinimized)
         controller.notification.connect(self._on_notification)
         controller.shutdown_finished.connect(self._on_shutdown_finished)
 
