@@ -88,6 +88,7 @@ class SettingsDialog(QDialog):
         env_path: Path,
         on_re_enroll: Callable[[], None] = lambda: None,
         on_delete_face: Callable[[], bool] = lambda: False,
+        autostart=None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -96,6 +97,7 @@ class SettingsDialog(QDialog):
         self._env_path = env_path
         self._on_re_enroll = on_re_enroll
         self._on_delete_face = on_delete_face
+        self._autostart = autostart
         self.setWindowTitle("Drivion settings")
         self.setStyleSheet(theme.STYLESHEET + STYLE)
         self.resize(560, 560)
@@ -185,6 +187,13 @@ class SettingsDialog(QDialog):
         form.addRow(self.keep_crops)
         form.addRow(self.cloud_ai)
         form.addRow("Commands kept in history", self.history_limit)
+        self.start_at_login = _check("Start Drivion when I sign in to Windows",
+                                     self._autostart is not None and self._autostart.is_enabled())
+        self.start_at_login.setVisible(self._autostart is not None)
+        form.addRow(self.start_at_login)
+        if self._autostart is not None:
+            form.addRow(QLabel("Drivion then listens for the wake word from sign-in, with its tray "
+                               "icon showing.", objectName="muted", wordWrap=True))
         re_enroll = QPushButton("Enroll my face again…")
         re_enroll.clicked.connect(self._on_re_enroll)
         self.delete_button = QPushButton("Delete my face data…", objectName="exit")
@@ -274,7 +283,9 @@ class SettingsDialog(QDialog):
     def save(self) -> bool:
         changes = self.changes()
         keys = {ENV_NAMES[name]: box.text().strip() for name, box in self.keys.items() if box.text().strip()}
-        if not changes and not keys:
+        autostart_changed = (self._autostart is not None
+                             and self.start_at_login.isChecked() != self._autostart.is_enabled())
+        if not changes and not keys and not autostart_changed:
             self.message.setText("Nothing to save.")
             return False
         try:
@@ -283,11 +294,13 @@ class SettingsDialog(QDialog):
                 self._config = save_settings(self._config_path, changes)
             if keys:
                 update_env(self._env_path, keys)
-        except ConfigError as exc:
+            if autostart_changed:
+                (self._autostart.enable if self.start_at_login.isChecked() else self._autostart.disable)()
+        except (ConfigError, OSError) as exc:
             self.message.setText(f"Not saved: {exc}")
             return False
         for box in self.keys.values():
             box.clear()
         log.info("Settings saved (sections: %s; keys updated: %d)", ", ".join(changes) or "none", len(keys))
-        self.message.setText("Saved. Restart Drivion to apply the changes.")
+        self.message.setText("Saved. Restart Drivion to apply the changes." if changes or keys else "Saved.")
         return True

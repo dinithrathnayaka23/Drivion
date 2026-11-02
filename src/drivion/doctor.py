@@ -14,6 +14,7 @@ from pathlib import Path
 
 from drivion.audio.models import BUILTIN_WAKE_WORDS, EMBEDDING, MELSPECTROGRAM, is_valid
 from drivion.config import AppConfig, paths
+from drivion.core.autostart import Autostart
 from drivion.speech.stt import SpeechUnavailable, check_whisper_model
 from drivion.vision.faces import FACE_MODELS, RECOGNIZER_ID
 from drivion.vision.templates import TemplateError, TemplateStore
@@ -125,6 +126,15 @@ def _voices(config: AppConfig) -> Check:
     return Check("Spoken replies", Status.OK, f"{len(voices)} Windows voices")
 
 
+def _start_at_login(autostart: Autostart) -> Check:
+    if not autostart.is_enabled():
+        return Check("Start at login", Status.OK, "off")
+    if not autostart.is_current():
+        return Check("Start at login", Status.WARN, "points to an old location",
+                     "Run: drivion --autostart on")
+    return Check("Start at login", Status.OK, "on")
+
+
 def run_checks(config: AppConfig, secrets, *, hardware: bool = True,
                store: TemplateStore | None = None, models: Path | None = None) -> list[Check]:
     models = models or paths.models_dir()
@@ -134,7 +144,7 @@ def run_checks(config: AppConfig, secrets, *, hardware: bool = True,
         _enrollment(store), _liveness(config), _ai(config, secrets),
     ]
     if hardware:
-        checks += [_microphone(), _voices(config)]
+        checks += [_microphone(), _voices(config), _start_at_login(Autostart())]
     return checks
 
 
