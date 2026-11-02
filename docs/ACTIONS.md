@@ -25,6 +25,13 @@ Defined in `actions/handlers.py` and registered in `ActionRegistry`. Nothing els
 | Open installed app | MEDIUM | – | `shell:AppsFolder` with the id from the Windows Start menu list | Can't be checked; the reply says "Opening…" |
 | Open Windows Settings page | LOW | – | A fixed `ms-settings:` address | Can't be checked; the reply says "Opening…" |
 | Open part of Windows | LOW | – | One fixed keyboard shortcut | Can't be checked; the reply says "Opening…" |
+| Close app | MEDIUM | – | A normal close request (`WM_CLOSE`), never forced | Waits up to 3 s for the window to go; otherwise says the app may want you to save |
+| Minimize, maximize, restore, switch, snap | LOW | – | Win32 calls, and Win+arrow for snapping | Window state read back where Windows allows |
+| Type text | MEDIUM | – | `SendInput`, only into a window that passes the keyboard check | Windows' return value |
+| Press a key or shortcut | MEDIUM | – | One entry from the fixed `KEY_ACTIONS` list, with the same check | Can't be checked |
+| Media keys | LOW | – | Windows media keys | Can't be checked |
+| Bluetooth, Wi-Fi | MEDIUM | – | The Windows radio API | State read back |
+| Dark or light mode | LOW | – | Two per-user registry values | Values read back |
 | Open website | LOW | – | Allowlisted `https://` address in your default browser | Can't be checked; the reply says "Opening…" |
 | Open folder | LOW | – | Allowlisted folder in File Explorer | The folder must exist |
 | Minimize/restore app | LOW | – | The app's own windows only, found by `process` name | Window state read back |
@@ -54,6 +61,19 @@ code."*
 - **Settings pages** only show the page. Drivion can't change a setting or click anything.
 - **Parts of Windows** are the Start menu, search, desktop, notifications, quick settings and
   task view. The shortcut list is fixed, and Win+R is left out because it opens the Run box.
+
+## Typing, keys and windows
+
+- **Keyboard check:** keys never go to terminals, Registry Editor, the Run box, *Create new task*
+  or Windows search, and they never go to a window Drivion can't identify. If the dashboard
+  is in front, Drivion moves focus to your last app first, and refuses if that fails.
+- **What it can't detect:** password boxes, and terminals inside other apps such as VS Code.
+- **Names:** program names match before window titles, because a title can say anything. If a
+  name fits different apps, Drivion asks.
+- **Only your spoken command** can type, press keys, close windows or move them. Bluetooth, Wi-Fi,
+  dark mode and media are the only new actions the AI may choose.
+- **"Stay awake"** raises the silence limit to `voice.work_timeout_s` for this session only.
+  Locking Windows by voice returns Drivion to standby.
 
 ## Confirmation rules (sleep, restart, shut down)
 

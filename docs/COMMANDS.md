@@ -19,6 +19,14 @@ and "Drivion" is ignored at the start and end of a command.
 | `OPEN_INSTALLED_APP` | "open Spotify", "launch Photoshop", "open task manager" | app from the Windows Start menu |
 | `OPEN_SETTINGS` | "open settings", "open bluetooth settings", "go to wi-fi settings" | one of the fixed Settings pages |
 | `OPEN_SURFACE` | "open the start menu", "open search", "show the desktop", "open notifications", "open quick settings", "open task view" | one of the fixed parts of Windows |
+| `CLOSE_APP` | "close Spotify", "quit Chrome", "close this" | an open app, or the window in use |
+| `CONTROL_WINDOW` | "minimize this", "maximize Spotify", "switch to Word", "snap this left" | an open app, or the window in use |
+| `TYPE_TEXT` | "type hello team", "write dear John" | up to 500 characters |
+| `PRESS_KEYS` | "press enter", "save this", "copy", "new tab", "go back", "scroll down" | one of a fixed list |
+| `MEDIA_CONTROL` | "pause", "play", "next song", "previous song" | – |
+| `SET_RADIO` | "turn off bluetooth", "turn on wi-fi" | Bluetooth or Wi-Fi, on or off |
+| `SET_DARK_MODE` | "turn on dark mode", "switch to light mode" | – |
+| `STAY_AWAKE` | "stay awake", "keep listening", "work mode" | – |
 | `OPEN_WEBSITE` | "go to YouTube", "open the GitHub website" | site from your allowlist |
 | `OPEN_FOLDER` | "open my downloads folder", "show me my documents" | folder from your allowlist |
 | `MINIMIZE_APP` / `RESTORE_APP` | "minimize Chrome", "bring back VS Code" | app from your allowlist |

@@ -34,7 +34,7 @@
 | 🎙️ **Hands-free wake phrase** | Runs quietly in the system tray and listens for "Hey Drivion" on your own PC |
 | 🙂 **Face unlock** | Checks your face, then asks for random head turns before it accepts a command |
 | 🗣️ **Offline voice commands** | Speech recognition and simple commands run on your computer, with no internet needed |
-| 🖥️ **Control of your PC** | Opens any app in your Start menu, about 30 Windows Settings pages, the Start menu and more |
+| 🖥️ **Control of your PC** | Opens any Start menu app, closes and arranges windows, types by voice, and switches Bluetooth, Wi-Fi and dark mode |
 | 🛡️ **Safety layer** | Only registered actions run, and power actions need a spoken "yes" |
 | 🤖 **AI fallback** | Questions go to Gemini, Groq or OpenRouter, and the next provider takes over if one fails |
 | 🔒 **Local, encrypted face data** | Stores encrypted face templates rather than photos, tied to your Windows account |
@@ -167,7 +167,11 @@ You don't need these exact words. Filler such as "please" and "can you" is ignor
 | **Screen** | *"take a screenshot"*, *"lock the computer"* |
 | **Power** ⚠️ | *"put my computer to sleep"*, *"restart the computer"*, *"shut down the computer"* |
 | **Ask anything** 🌐 | *"who wrote Hamlet?"*, *"tell me a joke"* |
-| **Drivion itself** | *"help"*, *"repeat that"*, *"cancel"*, *"Drivion, go to sleep"* |
+| **Windows and apps** | *"close Spotify"*, *"minimize this"*, *"switch to Chrome"*, *"snap this left"* |
+| **Typing** | *"type hello team"*, *"press enter"*, *"save this"*, *"copy"*, *"undo"* |
+| **Browsing** | *"new tab"*, *"close this tab"*, *"go back"*, *"scroll down"*, *"zoom in"* |
+| **Quick switches** | *"turn off bluetooth"*, *"turn on wi-fi"*, *"turn on dark mode"*, *"pause"*, *"next song"* |
+| **Drivion itself** | *"help"*, *"repeat that"*, *"cancel"*, *"stay awake"*, *"Drivion, go to sleep"* |
 
 ⚠️ Asks *"Are you sure…?"* and acts only on a clear **yes**. Saying "cancel" stops a restart
 or shutdown during its 10-second delay.
@@ -212,6 +216,7 @@ the taskbar. Its colour shows the state:
 | `drivion` | Start in standby (`python -m drivion` does the same) |
 | `drivion --doctor` | Check everything and show how to fix any problem |
 | `drivion --self-test` | Run every model and library on silence and a blank picture |
+| `drivion --test-wake` | Listen for 30 seconds and show what Drivion hears |
 | `drivion --check-config` | Validate the settings and show which keys are detected |
 | `drivion --download-models` | Download and verify all models |
 | `drivion --enroll-face` | Enroll your face |
@@ -297,7 +302,8 @@ If you move the program folder, run `drivion --autostart on` again from the new 
 | **Your voice** | Transcribed on your computer. Audio never leaves it |
 | **Face data** | Encrypted templates, protected by Windows DPAPI under your account. A copied file can't be decrypted on another PC |
 | **API keys** | Kept in `.env`, redacted from logs and never shown in the settings screen |
-| **AI** | Can only choose from Drivion's fixed list of actions, with checked values. It can't confirm its own request, run terminal commands or open apps outside your allowlist |
+| **AI** | Can only choose from Drivion's fixed list of actions, with checked values. It can't confirm its own request, run terminal commands, type, press keys, close windows or open apps outside your allowlist |
+| **Keyboard** | Drivion refuses to type or press keys in terminals, the Run box and Windows search |
 | **Sent online** | Requests Drivion can't handle offline go to your AI provider as text. Turn this off in *Settings → Privacy* |
 | **Logs** | Stored in `%LOCALAPPDATA%\Drivion\logs\drivion.log`, including the text of your spoken commands. Read them before sharing |
 
@@ -406,8 +412,9 @@ Run `drivion --doctor` first. It checks everything and prints the fix for each p
 - **Microphone chip shows "unavailable":** check *Settings → Privacy & security → Microphone*
   and make sure *Let desktop apps access your microphone* is on. Also check that no other app
   has exclusive use of the microphone. Then choose *Recover from error* in the tray.
-- **The wake word never triggers:** run `drivion --list-audio-devices`, set
-  `wake_word.input_device` to your microphone, or raise `wake_word.sensitivity`.
+- **The wake word never triggers:** run `drivion --test-wake` and say the phrase. If it shows
+  nothing, run `drivion --list-audio-devices` and set `wake_word.input_device`. If it shows
+  the wrong words, speak a little louder and slower.
 
 </details>
 
@@ -452,8 +459,10 @@ Run `drivion --doctor` first. It checks everything and prints the fix for each p
 - The wake phrase uses more CPU while people are talking nearby, and speaking it during a
   longer sentence can be missed.
 - Spoken commands are English only (`base.en`).
-- Drivion opens apps, Settings pages and parts of Windows, but it can't click, type or change
-  a setting inside them.
+- Drivion can't see inside windows, so it can't click buttons by name yet.
+- It can't detect password boxes, so don't dictate passwords. Dictated text is also logged.
+- It can't tell when you're in the terminal inside VS Code, so don't use "type" there.
+- While it's active, it obeys any voice it hears. Say "go to sleep" before you leave your PC.
 - Settings changes apply after a restart, and saving from the settings screen removes
   comments from `settings.toml`.
 - The packaged build isn't code-signed, has no installer, and is about 550 MB.
@@ -471,6 +480,7 @@ Run `drivion --doctor` first. It checks everything and prints the fix for each p
 | [AI](docs/AI.md) | Providers, keys and fallback |
 | [Face](docs/FACE.md) | Enrollment, liveness, thresholds and limits |
 | [Recovery](docs/RECOVERY.md) | Fixing problems, starting fresh and removing Drivion |
+| [Manual and demo guide](docs/MANUAL.md) | Every command, and a script for recording a demo |
 
 ## 📄 License
 

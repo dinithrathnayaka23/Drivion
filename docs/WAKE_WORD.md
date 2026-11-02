@@ -13,14 +13,18 @@ your computer. There are two engines:
 `audio/spoken_wake.py` works in three steps. Silero VAD finds a short burst of speech,
 Whisper transcribes it, and the burst counts if it says "hey" followed by the name. Whisper
 doesn't know the word "Drivion", so it writes "Drivian", "Dravian" or "Drivy On". The name
-goes through the same fuzzy match as commands, which excludes real words like "driving".
+goes through the same fuzzy match as commands, which excludes real words like "driving". A
+real voice drifted further, to "Drubian", "Tribune" and "Drew Bien", so a name also counts if
+its consonants follow the same pattern: D or T, R, V or B, then N.
 
 Measured with the real `base.en` model and both Windows voices on 3 November 2026:
 
 | Measure | Result |
 |---|---|
-| "Hey Drivion" recognised | 27 of 30 |
-| Lookalike phrases that woke it ("Hey Vivian", "Hey driving") | 0 of 40 |
+| "Hey Drivion" recognised, normal level | 23 of 24 |
+| "Hey Drivion" recognised, quiet (peak 3,500 of 32,767) | 22 of 24 |
+| "Hey Drivion" recognised, very quiet (peak 900) | 19 of 24 |
+| Lookalike phrases that woke it, at any level | 0 of 40 |
 | Time to transcribe a burst | about 0.45 s |
 
 These are synthetic voices, so your own results may differ. A false wake only starts face
@@ -28,6 +32,13 @@ verification, so it can't unlock anything.
 
 Giving Whisper the phrase as a hint looks better (30 of 30), but it then "hears" Drivion in
 similar names: 9 of 40 lookalikes woke it. That's why the engine doesn't use a hint.
+
+A short phrase is easy to lose on a laptop microphone, so the engine also counts any sound
+clearly above the room's background, boosts quiet audio, and joins two bursts within 1.5
+seconds, because a pause after "hey" can split the phrase in two.
+
+To see what Drivion hears, run `drivion --test-wake`. It listens for 30 seconds and shows each
+transcript on screen. Nothing is saved or logged.
 
 `sensitivity` sets how speech-like a sound must be before Whisper checks it. Transcripts
 stay in memory and are never logged or saved.
