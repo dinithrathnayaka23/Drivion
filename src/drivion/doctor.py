@@ -2,6 +2,10 @@
 
 It only reads: it lists devices but never opens the microphone or camera,
 loads no AI provider and sends nothing over the network. See docs/RECOVERY.md.
+
+``drivion --self-test`` goes further: it loads every model and library and runs
+them on silence and a blank picture. It is how a packaged build shows that
+nothing was left out. It also never opens the microphone or camera.
 """
 
 from __future__ import annotations
@@ -11,6 +15,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+
+import numpy as np
 
 from drivion.audio.models import BUILTIN_WAKE_WORDS, EMBEDDING, MELSPECTROGRAM, is_valid
 from drivion.config import AppConfig, paths
@@ -145,6 +151,90 @@ def run_checks(config: AppConfig, secrets, *, hardware: bool = True,
     ]
     if hardware:
         checks += [_microphone(), _voices(config), _start_at_login(Autostart())]
+    return checks
+
+
+def _try_wake_word(config: AppConfig, models: Path) -> str:
+    from drivion.audio.wake_word import OpenWakeWordEngine, resolve_wake_word
+
+    model_path, phrase = resolve_wake_word(config.wake_word.model, models, config.wake_word.phrase)
+    OpenWakeWordEngine(model_path, models).process(np.zeros(1_280, dtype=np.int16))
+    return f"{phrase!r} model ran"
+
+
+def _try_voice_activity(config: AppConfig, models: Path) -> str:
+    from drivion.speech.vad import VAD_FRAME_SAMPLES, SileroVad
+
+    SileroVad()(np.zeros(VAD_FRAME_SAMPLES, dtype=np.int16))
+    return "Silero model ran"
+
+
+def _try_speech(config: AppConfig, models: Path) -> str:
+    from drivion.speech.stt import WhisperTranscriber
+
+    model = check_whisper_model(models, config.voice.stt_model)
+    WhisperTranscriber(model, config.voice.stt_threads).transcribe(np.zeros(16_000, dtype=np.int16))
+    return f"{config.voice.stt_model} transcribed silence"
+
+
+def _try_face(config: AppConfig, models: Path) -> str:
+    from drivion.vision.faces import OpenCVFaceAnalyzer
+    from drivion.vision.quality import Face
+
+    analyzer = OpenCVFaceAnalyzer(models)
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    analyzer.detect(frame)
+    # A blank picture has no face, so give SFace made-up landmarks.
+    raw = np.float32([60, 60, 100, 100, 90, 100, 130, 100, 110, 120, 95, 140, 125, 140, 0.9])
+    size = analyzer.embed(frame, Face((60, 60, 100, 100), raw[4:14].reshape(5, 2), 0.9, raw)).size
+    return f"YuNet and SFace ran ({size} numbers)"
+
+
+def _try_windows_voice(config: AppConfig, models: Path) -> str:
+    from drivion.speech.tts import installed_voices
+
+    return f"{len(installed_voices())} voices found"
+
+
+def _try_volume(config: AppConfig, models: Path) -> str:
+    from drivion.actions.windows.audio import PycawVolume
+
+    return f"read the level: {PycawVolume().get_percent()}%"
+
+
+def _try_https(config: AppConfig, models: Path) -> str:
+    import ssl
+
+    return f"{len(ssl.create_default_context().get_ca_certs())} trusted certificates (nothing sent)"
+
+
+def _try_dashboard(config: AppConfig, models: Path) -> str:
+    from PySide6.QtWidgets import QApplication
+
+    from drivion.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    MainWindow(animated=False).deleteLater()  # built, never shown
+    app.processEvents()
+    return "built"
+
+
+SELF_TESTS = {
+    "Wake word engine": _try_wake_word, "Voice activity": _try_voice_activity,
+    "Speech recognition": _try_speech, "Face engine": _try_face,
+    "Windows voices": _try_windows_voice, "Volume control": _try_volume,
+    "HTTPS": _try_https, "Dashboard": _try_dashboard,
+}
+
+
+def run_self_test(config: AppConfig, models: Path | None = None) -> list[Check]:
+    models = models or paths.models_dir()
+    checks = []
+    for name, attempt in SELF_TESTS.items():
+        try:
+            checks.append(Check(name, Status.OK, attempt(config, models)))
+        except Exception as exc:  # the whole point is to report these, not stop at the first
+            checks.append(Check(name, Status.FAIL, f"{type(exc).__name__}: {exc}"))
     return checks
 
 

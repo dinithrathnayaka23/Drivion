@@ -64,6 +64,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
                       help="delete all stored face data, then exit")
     parser.add_argument("--doctor", action="store_true",
                         help="check everything Drivion needs and show how to fix problems, then exit")
+    parser.add_argument("--self-test", action="store_true",
+                        help="load every model and library and run them on silence, then exit")
     parser.add_argument("--autostart", choices=("on", "off", "status"),
                         help="start Drivion when you sign in to Windows, or check whether it does")
     face.add_argument("--yes", action="store_true", help="don't ask for confirmation (with --delete-face)")
@@ -98,6 +100,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         from drivion.doctor import print_report, run_checks
 
         return EXIT_OK if print_report(run_checks(config, secrets)) else EXIT_ERROR
+
+    if args.self_test:
+        from drivion.doctor import print_report, run_self_test
+
+        return EXIT_OK if print_report(run_self_test(config)) else EXIT_ERROR
 
     if args.autostart:
         return _set_autostart(args.autostart)

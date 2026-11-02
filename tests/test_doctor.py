@@ -1,10 +1,11 @@
 """drivion --doctor."""
 
 import os
+from unittest.mock import patch
 
 from drivion.config import AppConfig, load_secrets
 from drivion.core.autostart import Autostart
-from drivion.doctor import Status, _start_at_login, print_report, run_checks
+from drivion.doctor import SELF_TESTS, Status, _start_at_login, print_report, run_checks, run_self_test
 from drivion.vision.templates import TemplateStore
 
 
@@ -65,3 +66,21 @@ def test_start_at_login_check(tmp_path):
     check = _start_at_login(autostart)
     assert check.status is Status.WARN and "--autostart on" in check.fix
     autostart.disable()
+
+
+def test_self_test_reports_every_failure_and_carries_on(tmp_path):
+    def broken(config, models):
+        raise RuntimeError("no such library")
+
+    tests = {"One": broken, "Two": lambda config, models: "fine"}
+    with patch.dict(SELF_TESTS, tests, clear=True):
+        checks = run_self_test(AppConfig(), tmp_path)
+    assert [(c.name, c.status) for c in checks] == [("One", Status.FAIL), ("Two", Status.OK)]
+    assert "no such library" in checks[0].detail
+
+
+def test_self_test_without_models_fails_cleanly(tmp_path):
+    checks = {c.name: c.status for c in run_self_test(AppConfig(), tmp_path / "empty")}
+    assert checks["Wake word engine"] is Status.FAIL
+    assert checks["Speech recognition"] is Status.FAIL
+    assert checks["Face engine"] is Status.FAIL
