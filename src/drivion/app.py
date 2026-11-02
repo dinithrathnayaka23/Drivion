@@ -85,7 +85,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load_config(args.config)
     except ConfigError as exc:
         # Logging isn't configured yet; stderr is the right channel here.
-        print(f"Drivion configuration error: {exc}", file=sys.stderr)
+        _report_fatal(f"Drivion configuration error: {exc}")
         return EXIT_CONFIG_ERROR
 
     log_file = configure_logging(config.general.log_level, paths.log_dir(), secrets.values())
@@ -123,6 +123,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                    env_path=args.env_file)
 
 
+def _report_fatal(message: str) -> None:
+    print(message, file=sys.stderr)
+    if sys.stderr is None:  # DrivionApp.exe has no console, so show it instead
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, message, "Drivion", 0x10)  # MB_ICONERROR
+
+
 def _settings_dialog(config: AppConfig, secrets, config_path: Path, env_path: Path):
     from PySide6.QtCore import QProcess
     from PySide6.QtWidgets import QMessageBox
@@ -131,7 +139,8 @@ def _settings_dialog(config: AppConfig, secrets, config_path: Path, env_path: Pa
 
     def re_enroll() -> None:
         # A separate process: the enrollment window has its own event loop.
-        QProcess.startDetached(sys.executable, ["-m", "drivion", "--enroll-face"])
+        program, *arguments = paths.launch_command("--enroll-face")
+        QProcess.startDetached(program, arguments)
 
     def delete_face() -> bool:
         answer = QMessageBox.question(None, "Delete face data",
