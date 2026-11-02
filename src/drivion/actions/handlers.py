@@ -23,7 +23,9 @@ from drivion.actions.windows.desktop import Desktop
 from drivion.actions.windows.display import BrightnessControl, BrightnessUnsupported
 from drivion.actions.windows.power import PowerControl
 from drivion.actions.windows.screen import Screenshotter
+from drivion.actions.windows.start_apps import apps_folder_target
 from drivion.intents import schemas as s
+from drivion.intents.system import SETTINGS_PAGES, SHELL_SURFACES
 
 log = logging.getLogger(__name__)
 
@@ -122,8 +124,11 @@ class PowerScheduler:
 
 
 def build_registry(backends: Backends, commands, actions, names: Callable[[str], str],
-                   power: PowerScheduler, wait=wait_until) -> ActionRegistry:
-    """``commands``/``actions``: the [commands] and [actions] config sections."""
+                   power: PowerScheduler, wait=wait_until, installed=None) -> ActionRegistry:
+    """``commands``/``actions``: the [commands] and [actions] config sections.
+
+    ``installed``: the ``InstalledApps`` list. Without it, only allowlisted apps open.
+    """
     b = backends
     registry = ActionRegistry()
 
@@ -213,7 +218,34 @@ def build_registry(backends: Backends, commands, actions, names: Callable[[str],
         b.desktop.open_target(str(path))
         return ActionResult(True, f"Opening your {name} folder.", verified=True)
 
+    def open_installed_app(intent: s.OpenInstalledApp) -> ActionResult:
+        # The id always comes from Windows' list, so a name can't smuggle in a path.
+        app_id = installed.app_id(intent.name) if installed is not None else None
+        if app_id is None:
+            return ActionResult(False, f"{intent.name} isn't an app I can open.")
+        try:
+            b.desktop.open_target(apps_folder_target(app_id))
+        except OSError:
+            return ActionResult(False, f"Windows couldn't open {intent.name}.")
+        return ActionResult(True, f"Opening {intent.name}.")
+
+    def open_settings(intent: s.OpenSettings) -> ActionResult:
+        address, name, _ = SETTINGS_PAGES[intent.page]
+        try:
+            b.desktop.open_target(address)
+        except OSError:
+            return ActionResult(False, f"Windows couldn't open {name}.")
+        return ActionResult(True, f"Opening {name}.")
+
+    def open_surface(intent: s.OpenSurface) -> ActionResult:
+        b.desktop.open_surface(intent.surface)
+        return ActionResult(True, f"Opening {SHELL_SURFACES[intent.surface]}.")
+
     registry.register("OPEN_APP", "Open an allowlisted app", Risk.LOW, open_app)
+    # MEDIUM: any app in the Start menu, which is a much wider list than yours.
+    registry.register("OPEN_INSTALLED_APP", "Open an app from the Start menu", Risk.MEDIUM, open_installed_app)
+    registry.register("OPEN_SETTINGS", "Open a Windows Settings page", Risk.LOW, open_settings)
+    registry.register("OPEN_SURFACE", "Open a part of the Windows interface", Risk.LOW, open_surface)
     registry.register("OPEN_WEBSITE", "Open an allowlisted website", Risk.LOW, open_website)
     registry.register("OPEN_FOLDER", "Open an allowlisted folder", Risk.LOW, open_folder)
 

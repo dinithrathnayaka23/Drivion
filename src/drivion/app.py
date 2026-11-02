@@ -608,7 +608,7 @@ def _build_llm(config: AppConfig, secrets, catalog, transport=None):
 
 
 def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_phrase: str,
-                             backends=None, secrets=None, llm_transport=None):
+                             backends=None, secrets=None, llm_transport=None, installed=None):
     """Transcript -> intent -> (safety-checked action) -> reply.
 
     Shared by voice input and the simulation menu. ``backends`` defaults to
@@ -625,12 +625,17 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
     from drivion.intents.responder import AssistantResponder
     from drivion.safety.executor import SafeExecutor
 
-    backends = backends or _windows_backends()
+    if backends is None:  # the real computer, so its real app list too
+        from drivion.actions.windows.start_apps import list_start_apps
+        from drivion.intents.installed import InstalledApps
+
+        backends, installed = _windows_backends(), InstalledApps(list_start_apps)
     catalog = Catalog.from_settings(config.commands)
     actions = config.actions
     power = PowerScheduler(backends.power, actions.power_delay_s,
                            hibernate=actions.sleep_method == "hibernate", notify=speaker.say)
-    registry = build_registry(backends, config.commands, actions, catalog.spoken_name, power)
+    registry = build_registry(backends, config.commands, actions, catalog.spoken_name, power,
+                              installed=installed)
     executor = SafeExecutor(
         registry,
         # Actions only while unlocked (ACTIVE). Read from the listener thread;
@@ -647,6 +652,7 @@ def _build_command_processor(config: AppConfig, controller, feed, speaker, wake_
         wake_phrase=wake_phrase,
         executor=executor,
         cancel_scheduled=power.cancel,
+        installed=installed,
         llm=_build_llm(config, secrets, catalog, llm_transport) if secrets is not None else None,
         on_thinking=lambda: feed.set_voice_status(VoiceStatus.THINKING),
     )

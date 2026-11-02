@@ -18,6 +18,8 @@ from typing import Annotated, ClassVar, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from drivion.intents.system import SETTINGS_PAGES, SHELL_SURFACES
+
 Percent = Annotated[int, Field(ge=0, le=100)]
 Step = Annotated[int, Field(ge=1, le=100)]
 Direction = Literal["up", "down"]
@@ -84,6 +86,25 @@ class OpenWebsite(_Intent):
 class OpenFolder(_Intent):
     kind: Literal["OPEN_FOLDER"] = "OPEN_FOLDER"
     folder: Name
+
+
+class OpenInstalledApp(_Intent):
+    """An app from the Windows Start menu, by the name Windows gives it."""
+
+    kind: Literal["OPEN_INSTALLED_APP"] = "OPEN_INSTALLED_APP"
+    name: Annotated[str, Field(min_length=1, max_length=128)]
+
+
+class OpenSettings(_Intent):
+    kind: Literal["OPEN_SETTINGS"] = "OPEN_SETTINGS"
+    page: Literal[tuple(SETTINGS_PAGES)]
+
+
+class OpenSurface(_Intent):
+    """A part of the Windows interface, such as the Start menu."""
+
+    kind: Literal["OPEN_SURFACE"] = "OPEN_SURFACE"
+    surface: Literal[tuple(SHELL_SURFACES)]
 
 
 class MinimizeApp(_Intent):
@@ -164,8 +185,8 @@ class GoToSleep(_Intent):
 Intent = Annotated[
     Union[
         SetVolume, ChangeVolume, Mute, Unmute, SetBrightness, ChangeBrightness,
-        OpenApp, OpenWebsite, OpenFolder, MinimizeApp, RestoreApp,
-        LockComputer, TakeScreenshot, SleepComputer, RestartComputer, ShutdownComputer,
+        OpenApp, OpenWebsite, OpenFolder, OpenInstalledApp, OpenSettings, OpenSurface,
+        MinimizeApp, RestoreApp, LockComputer, TakeScreenshot, SleepComputer, RestartComputer, ShutdownComputer,
         AskQuestion, Help, Repeat, Cancel, Confirm, Deny, Greet, GoToSleep,
     ],
     Field(discriminator="kind"),
@@ -207,6 +228,12 @@ def describe(intent: _Intent, name_for: Callable[[str], str] = _plain) -> str:
             return f"open the {name_for(site)} website"
         case OpenFolder(folder=f):
             return f"open your {name_for(f)} folder"
+        case OpenInstalledApp(name=n):
+            return f"open {n}"
+        case OpenSettings(page=p):
+            return f"open {SETTINGS_PAGES[p][1]}"
+        case OpenSurface(surface=name):
+            return f"open {SHELL_SURFACES[name]}"
         case MinimizeApp(app=a):
             return f"minimize {name_for(a)}"
         case RestoreApp(app=a):

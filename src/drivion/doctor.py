@@ -212,6 +212,13 @@ def _try_windows_voice(config: AppConfig, models: Path) -> str:
     return f"{len(installed_voices())} voices found"
 
 
+def _try_installed_apps(config: AppConfig, models: Path) -> str:
+    from drivion.actions.windows.start_apps import list_start_apps
+    from drivion.intents.installed import InstalledApps
+
+    return f"{len(InstalledApps(list_start_apps))} apps can be opened by voice"
+
+
 def _try_volume(config: AppConfig, models: Path) -> str:
     from drivion.actions.windows.audio import PycawVolume
 
@@ -238,7 +245,8 @@ def _try_dashboard(config: AppConfig, models: Path) -> str:
 SELF_TESTS = {
     "Wake word engine": _try_wake_word, "Voice activity": _try_voice_activity,
     "Speech recognition": _try_speech, "Face engine": _try_face,
-    "Windows voices": _try_windows_voice, "Volume control": _try_volume,
+    "Windows voices": _try_windows_voice, "Installed apps": _try_installed_apps,
+    "Volume control": _try_volume,
     "HTTPS": _try_https, "Dashboard": _try_dashboard,
 }
 

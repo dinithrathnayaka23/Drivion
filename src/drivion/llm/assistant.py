@@ -14,6 +14,9 @@ are the rule:
 3. it must validate through ``INTENT_ADAPTER`` (types and ranges);
 4. any app, website or folder must be in your allowlist.
 
+Installed apps outside your allowlist aren't in ``LLM_ACTIONS``: only your own
+spoken command can open those.
+
 A reply that fails any check is unusable, and the next provider is tried.
 Even a valid action is still only a *request*: it goes through the
 ``SafeExecutor`` like any spoken command (confirmation, authorization).
@@ -36,7 +39,7 @@ from drivion.llm.fallback import FallbackChat
 # Greet) and AskQuestion are deliberately excluded.
 LLM_ACTIONS: tuple[type, ...] = (
     s.SetVolume, s.ChangeVolume, s.Mute, s.Unmute, s.SetBrightness, s.ChangeBrightness,
-    s.OpenApp, s.OpenWebsite, s.OpenFolder, s.MinimizeApp, s.RestoreApp,
+    s.OpenApp, s.OpenWebsite, s.OpenFolder, s.OpenSettings, s.OpenSurface, s.MinimizeApp, s.RestoreApp,
     s.LockComputer, s.TakeScreenshot, s.SleepComputer, s.RestartComputer, s.ShutdownComputer,
     s.Help, s.GoToSleep,
 )
@@ -93,6 +96,7 @@ Allowed values (use these ids exactly; never invent others):
 Rules:
 - Only use an action if it clearly matches the request; if unsure, answer instead.
 - You cannot run programs, commands, scripts or anything not listed. If asked, say so in an answer.
+- To open an app that isn't listed, tell the user to say "open" and the app's name.
 - SLEEP_COMPUTER, RESTART_COMPUTER and SHUTDOWN_COMPUTER are only for explicit requests; the user will be asked to confirm.
 - GO_TO_SLEEP means the assistant itself goes to standby, not the computer.
 - Answers: at most two short sentences, plain text, no markdown, lists or emoji.

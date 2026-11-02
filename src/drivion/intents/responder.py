@@ -23,6 +23,7 @@ from collections.abc import Callable
 from drivion.core.activity import Outcome
 from drivion.intents import schemas as s
 from drivion.intents.catalog import Catalog
+from drivion.intents.installed import InstalledApps
 from drivion.intents.parser import IntentParser, Invalid, NotUnderstood, Understood
 from drivion.llm.assistant import Answer, LLMAssistant
 from drivion.llm.fallback import AllProvidersFailed
@@ -52,9 +53,10 @@ class AssistantResponder:
         cancel_scheduled: Callable[[], str | None] = lambda: None,
         llm: LLMAssistant | None = None,
         on_thinking: Callable[[], None] = lambda: None,
+        installed: InstalledApps | None = None,
     ) -> None:
         self._catalog = catalog
-        self._parser = IntentParser(catalog)
+        self._parser = IntentParser(catalog, installed)
         self._on_go_to_sleep = on_go_to_sleep
         self._wake_phrase = wake_phrase
         self._executor = executor
@@ -184,7 +186,8 @@ class AssistantResponder:
         example_app = " or ".join(examples) or "an app"
         text = (
             f"You can say things like: open {example_app}, set the volume to 50 percent, "
-            "turn the brightness down, take a screenshot, or lock the computer. "
+            "turn the brightness down, open bluetooth settings, open the start menu, "
+            "take a screenshot, or lock the computer. "
             "Say repeat to hear my last answer, or go to sleep when you're done."
         )
         if self._executor is None:

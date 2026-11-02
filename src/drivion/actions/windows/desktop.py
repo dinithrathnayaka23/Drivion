@@ -4,6 +4,8 @@
   as one file, folder or URL to open, never as a command line.
 * Windows are found by the executable name of their process, so
   "minimize chrome" only touches chrome.exe's own windows.
+* ``open_surface`` presses one fixed shortcut from ``HOTKEYS``. Nothing else can
+  be pressed, and Win+R is left out on purpose: it opens the Run box.
 """
 
 from __future__ import annotations
@@ -21,9 +23,23 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 # Shell windows that belong to explorer.exe but aren't "File Explorer windows".
 _SHELL_CLASSES = {"Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Progman", "WorkerW"}
 
+VK_TAB = 0x09
+VK_LWIN = 0x5B
+KEYEVENTF_EXTENDEDKEY = 0x0001
+KEYEVENTF_KEYUP = 0x0002
+HOTKEYS: dict[str, tuple[int, ...]] = {
+    "start_menu": (VK_LWIN,),
+    "search": (VK_LWIN, ord("S")),
+    "desktop": (VK_LWIN, ord("D")),
+    "notifications": (VK_LWIN, ord("N")),
+    "quick_settings": (VK_LWIN, ord("A")),
+    "task_view": (VK_LWIN, VK_TAB),
+}
+
 
 class Desktop(Protocol):
     def open_target(self, target: str) -> None: ...
+    def open_surface(self, surface: str) -> None: ...
     def lock(self) -> bool: ...
     def app_windows(self, process: str) -> list[int]: ...
     def minimize(self, hwnd: int) -> None: ...
@@ -66,6 +82,19 @@ def _process_name(pid: int) -> str | None:
 class WindowsDesktop:
     def open_target(self, target: str) -> None:
         os.startfile(target)  # raises OSError if Windows can't open it
+
+    def open_surface(self, surface: str) -> None:
+        keys = HOTKEYS[surface]
+        user32 = ctypes.windll.user32
+
+        def press(key: int, flags: int = 0) -> None:
+            extended = KEYEVENTF_EXTENDEDKEY if key == VK_LWIN else 0
+            user32.keybd_event(key, 0, flags | extended, 0)
+
+        for key in keys:
+            press(key)
+        for key in reversed(keys):  # always released, so no key is left held down
+            press(key, KEYEVENTF_KEYUP)
 
     def lock(self) -> bool:
         return bool(ctypes.windll.user32.LockWorkStation())

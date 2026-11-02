@@ -48,6 +48,7 @@ class FakeDesktop:
         self.windows = windows or {}          # process -> {hwnd: minimized?}
         self.openable = openable              # None = everything opens
         self.opened, self.locked = [], 0
+        self.surfaces = []
         self.lock_ok = lock_ok
         self.starts_window = {}               # launch target -> process to "start"
 
@@ -57,6 +58,9 @@ class FakeDesktop:
         self.opened.append(target)
         if target in self.starts_window:
             self.windows.setdefault(self.starts_window[target], {})[999] = False
+
+    def open_surface(self, surface):
+        self.surfaces.append(surface)
 
     def lock(self):
         self.locked += 1

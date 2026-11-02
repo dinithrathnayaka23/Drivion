@@ -27,7 +27,9 @@ from pydantic import ValidationError
 
 from drivion.intents import schemas as s
 from drivion.intents.catalog import Catalog, TargetKind
+from drivion.intents.installed import InstalledApps
 from drivion.intents.normalize import ASSISTANT_NAME, normalize
+from drivion.intents.system import settings_page
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,7 @@ PCT = r"(?: percent| per cent)?"
 BY = rf"(?: by {LEVEL}{PCT})?"
 SET = r"(?:set|change|put|turn|adjust|make)"
 COMPUTER = rf"{THE}(?:computer|pc|laptop|system|machine|windows|device)"
+OPEN = r"(?:open|launch|start|run|go to|show me|show|bring up|pull up|take me to|navigate to|visit|load|fire up)"
 
 _QUESTION = re.compile(
     r"(?:what|who|whom|whose|why|how|when|where|which|is|are|am|was|were|"
@@ -95,8 +98,9 @@ def _fixed(model: type) -> Builder:
 
 
 class IntentParser:
-    def __init__(self, catalog: Catalog) -> None:
+    def __init__(self, catalog: Catalog, installed: InstalledApps | None = None) -> None:
         self.catalog = catalog
+        self.installed = installed
         self._rules = self._build_rules()
 
     def parse(self, transcript: str) -> ParseResult:
@@ -232,6 +236,31 @@ class IntentParser:
                 rf"(?:make {THE}screen |make it )?(?:dimmer|darker)", rf"dim {THE}screen",
             ], change("CHANGE_BRIGHTNESS", "down")),
 
+            # --- parts of Windows: before settings ("quick settings") and minimize ---
+            self._surface("start_menu", [
+                rf"(?:(?:{OPEN}|press|click|hit) )?{THE}(?:windows )?start (?:menu|button)",
+                rf"(?:open|show|press) {THE}start", rf"(?:open|press|hit) {THE}windows (?:key|button|menu)",
+            ]),
+            self._surface("search", [rf"{OPEN} {THE}(?:windows )?search", r"windows search"]),
+            self._surface("desktop", [
+                rf"(?:show|show me|go to) {THE}desktop", rf"minimi[sz]e (?:everything|all(?: {THE}windows)?)",
+            ]),
+            self._surface("notifications", [
+                rf"{OPEN} {THE}notifications?(?: cent(?:er|re))?", r"notification cent(?:er|re)",
+            ]),
+            self._surface("quick_settings", [
+                rf"(?:{OPEN} )?{THE}(?:quick settings|action cent(?:er|re))",
+            ]),
+            self._surface("task_view", [
+                rf"(?:{OPEN} )?{THE}task view", rf"show (?:me )?all {THE}(?:windows|apps)",
+            ]),
+
+            # --- Windows Settings ---
+            _rule("settings", [
+                rf"(?:{OPEN} )?{THE}(?:(?P<page>.+?) )?settings(?: app| page| window)?",
+                rf"{OPEN} windows update",
+            ], self._settings),
+
             # --- windows of apps ---
             _rule("minimize", [r"(?:minimi[sz]e|hide) (?P<target>.+)"], self._app_target("MINIMIZE_APP")),
             _rule("restore", [
@@ -251,11 +280,37 @@ class IntentParser:
         spoken = match["target"]
         target = self.catalog.resolve(spoken)
         if target is None:
-            return Invalid(f"I don't have “{spoken}” in your list of apps, websites or folders.")
+            return self._open_elsewhere(spoken)
         field = {TargetKind.APP: ("OPEN_APP", "app"),
                  TargetKind.WEBSITE: ("OPEN_WEBSITE", "site"),
                  TargetKind.FOLDER: ("OPEN_FOLDER", "folder")}[target.kind]
         return {"kind": field[0], field[1]: target.id}
+
+    def _open_elsewhere(self, spoken: str) -> dict | ParseResult:
+        """Not in your list: try the apps on this computer, then Settings pages."""
+        found = self.installed.find(spoken) if self.installed is not None else None
+        if found is not None and found.name:
+            return {"kind": "OPEN_INSTALLED_APP", "name": found.name}
+        if found is not None and found.options:
+            return Invalid(f"I found {' and '.join(found.options)}. Which one do you want?")
+        page = settings_page(spoken)
+        if page is not None:
+            return {"kind": "OPEN_SETTINGS", "page": page}
+        if self.installed is None:
+            return Invalid(f"I don't have “{spoken}” in your list of apps, websites or folders.")
+        return Invalid(f"I couldn't find “{spoken}” on this computer.")
+
+    @staticmethod
+    def _surface(surface: str, patterns: list[str]) -> _Rule:
+        return _rule(surface, patterns, lambda _match: {"kind": "OPEN_SURFACE", "surface": surface})
+
+    @staticmethod
+    def _settings(match: re.Match) -> dict | ParseResult:
+        spoken = (match.groupdict().get("page") or "windows").strip()
+        if match.string.endswith("windows update"):
+            spoken = "update"
+        page = settings_page(spoken)
+        return {"kind": "OPEN_SETTINGS", "page": page} if page else Invalid(f"I can't open {spoken} settings.")
 
     def _app_target(self, kind: str) -> Builder:
         verb = "minimize" if kind == "MINIMIZE_APP" else "restore"
