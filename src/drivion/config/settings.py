@@ -82,7 +82,7 @@ class FaceSettings(_Section):
     # that off, and then a photo of you can unlock Drivion (see docs/FACE.md).
     liveness_mode: Literal["none", "challenge"] = "challenge"
     liveness_challenges: int = Field(default=2, ge=1, le=4)
-    liveness_timeout_s: float = Field(default=6.0, ge=3.0, le=15.0)  # for each head turn
+    liveness_timeout_s: float = Field(default=8.0, ge=3.0, le=15.0)  # for each head turn
     # Required change in head turn. 0.30 is over twice what tilting a photo gave (0.126).
     liveness_turn: float = Field(default=0.30, ge=0.2, le=0.6)
     camera_mirrored: bool = False  # set true if "turn left" is always seen as right

@@ -23,6 +23,7 @@ YuNet gives five landmarks and none on the eyelids, so blinks aren't checked.
 
 from __future__ import annotations
 
+import logging
 import secrets
 import statistics
 import threading
@@ -36,6 +37,8 @@ import numpy as np
 from drivion.vision.camera import CameraError, FrameSource
 from drivion.vision.faces import FaceAnalyzer, best_similarity
 from drivion.vision.quality import Face, FrameIssue, QualityLimits, assess, signed_yaw
+
+log = logging.getLogger(__name__)
 
 
 class Challenge(StrEnum):
@@ -51,6 +54,7 @@ LOOK_AHEAD = "Now look straight at the camera."
 class LivenessOutcome(StrEnum):
     PASSED = "PASSED"
     TIMED_OUT = "TIMED_OUT"
+    NOT_CENTRED = "NOT_CENTRED"
     WRONG_WAY = "WRONG_WAY"
     FACE_LOST = "FACE_LOST"
     MULTIPLE_FACES = "MULTIPLE_FACES"
@@ -62,6 +66,7 @@ class LivenessOutcome(StrEnum):
 REASONS = {
     LivenessOutcome.PASSED: "liveness check passed",
     LivenessOutcome.TIMED_OUT: "the head turn wasn't seen in time",
+    LivenessOutcome.NOT_CENTRED: "you didn't look back at the camera in time",
     LivenessOutcome.WRONG_WAY: "the head turned the wrong way",
     LivenessOutcome.FACE_LOST: "the face left the camera's view",
     LivenessOutcome.MULTIPLE_FACES: "more than one face appeared",
@@ -75,7 +80,7 @@ REASONS = {
 class LivenessSettings:
     threshold: float               # the face-match threshold, for the final frontal check
     challenges: int = 2
-    timeout_s: float = 6.0         # for each turn, including returning to centre
+    timeout_s: float = 8.0         # for each step, and it includes hearing the prompt
     turn_delta: float = 0.30       # required yaw change from your centred position
     centre_band: float = 0.15      # how close to centred counts as "looking ahead"
     hold_frames: int = 2           # frames the turn must be held, to ignore detector jitter
@@ -170,6 +175,8 @@ def run_challenges(
     try:
         baseline = _baseline(watcher, settings, clock)
         for challenge in challenges:
+            if completed:  # without this you'd wait, still turned, for a prompt that never comes
+                on_prompt(LOOK_AHEAD)
             _centre(watcher, baseline, settings, clock)
             on_prompt(PROMPTS[challenge])
             _turn(watcher, challenge, baseline, settings, clock)
@@ -196,13 +203,23 @@ def _baseline(watcher, settings, clock) -> float:
     return statistics.median(samples)
 
 
+def _measure(value: float | None) -> str:
+    return "no face seen" if value is None else f"{value:.2f}"
+
+
 def _centre(watcher, baseline, settings, clock) -> None:
     deadline = clock() + settings.timeout_s
+    closest = None
     while clock() < deadline:
         _, face = watcher.next_face()
-        if face is not None and abs(_yaw_of(face, settings) - baseline) <= settings.centre_band:
+        if face is None:
+            continue
+        offset = abs(_yaw_of(face, settings) - baseline)
+        if offset <= settings.centre_band:
             return
-    raise _Stop(LivenessOutcome.TIMED_OUT)
+        closest = offset if closest is None else min(closest, offset)
+    log.info("Never looked back: closest %s, needed %.2f", _measure(closest), settings.centre_band)
+    raise _Stop(LivenessOutcome.NOT_CENTRED)
 
 
 def _turn(watcher, challenge, baseline, settings, clock) -> None:
@@ -211,17 +228,20 @@ def _turn(watcher, challenge, baseline, settings, clock) -> None:
     wanted = 1.0 if challenge is Challenge.TURN_LEFT else -1.0
     deadline = clock() + settings.timeout_s
     held = opposite = 0
+    furthest = None
     while clock() < deadline:
         _, face = watcher.next_face()
         if face is None:
             continue
         change = (_yaw_of(face, settings) - baseline) * wanted
+        furthest = change if furthest is None else max(furthest, change)
         held = held + 1 if change >= settings.turn_delta else 0
         opposite = opposite + 1 if change <= -settings.turn_delta else 0
         if held >= settings.hold_frames:
             return
         if opposite >= settings.hold_frames:
             raise _Stop(LivenessOutcome.WRONG_WAY)
+    log.info("Turn not seen: furthest %s, needed %.2f", _measure(furthest), settings.turn_delta)
     raise _Stop(LivenessOutcome.TIMED_OUT)
 
 

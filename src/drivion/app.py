@@ -500,6 +500,8 @@ def _register_face(config: AppConfig, controller, feed, speaker, verifying_servi
 
     def report(attempt, result) -> None:
         kind = EventType.VERIFICATION_SUCCEEDED if result.verified else EventType.VERIFICATION_FAILED
+        if not result.verified:  # the dashboard is closed, so say why
+            speaker.say(f"Access denied: {result.reason}.")
         controller.post_event(Event(kind, "face", result.reason, attempt=attempt))
 
     def prompt(text: str) -> None:  # the dashboard is closed during verification

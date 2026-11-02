@@ -64,7 +64,7 @@ def test_following_the_prompts_passes():
     shots = centred() + turned(0.45) + centred() + turned(-0.45) + centred()
     result, prompts = run(shots, (LEFT, RIGHT))
     assert result.passed and result.completed == 2
-    assert prompts == [PROMPTS[LEFT], PROMPTS[RIGHT], LOOK_AHEAD]
+    assert prompts == [PROMPTS[LEFT], LOOK_AHEAD, PROMPTS[RIGHT], LOOK_AHEAD]
 
 
 def test_a_still_photo_times_out():
@@ -119,6 +119,19 @@ def test_someone_else_finishing_the_check_fails():
 def test_never_looking_back_fails():
     result, _ = run(centred() + turned(0.45, 500))
     assert result.outcome is LivenessOutcome.TIMED_OUT
+
+
+def test_you_are_told_to_look_back_between_turns():
+    result, prompts = run(centred() + turned(0.45) + turned(0.45, 500), (LEFT, RIGHT))
+    assert result.outcome is LivenessOutcome.NOT_CENTRED and result.completed == 1
+    assert prompts == [PROMPTS[LEFT], LOOK_AHEAD]
+    assert "look back" in result.reason
+
+
+def test_a_missed_turn_logs_how_far_it_got(caplog):
+    with caplog.at_level("INFO"):
+        run([pose(0.0) for _ in range(4)] + [pose(0.2) for _ in range(500)])
+    assert "furthest 0.20, needed 0.30" in caplog.text
 
 
 def test_a_person_who_starts_turned_is_measured_from_there():
@@ -192,7 +205,7 @@ def test_attempt_budget_covers_every_step():
     from drivion.config.settings import FaceSettings
 
     face = FaceSettings()
-    assert face.total_timeout_s == 10 + (2 * 2 + 2) * 6
+    assert face.total_timeout_s == 10 + (2 * 2 + 2) * 8
     assert FaceSettings(liveness_mode="none").total_timeout_s == 10
 
 
