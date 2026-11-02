@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from collections.abc import Iterable
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -73,8 +74,10 @@ def configure_logging(level: str, log_dir: Path, secrets: Iterable[str] = ()) ->
     file_handler = RotatingFileHandler(
         log_file, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
     )
-    console_handler = logging.StreamHandler()
-    for handler in (file_handler, console_handler):
+    handlers: list[logging.Handler] = [file_handler]
+    if sys.stderr is not None:  # DrivionApp.exe has no console
+        handlers.append(logging.StreamHandler())
+    for handler in handlers:
         handler.setFormatter(formatter)
         handler.addFilter(redactor)
         root.addHandler(handler)

@@ -4,6 +4,7 @@ import pytest
 
 from drivion.config import AppConfig, load_config, load_secrets
 from drivion.core.activity import ActivityFeed
+from drivion.core.autostart import Autostart
 from drivion.core.controller import AssistantController
 from drivion.core.events import Event, EventType
 from drivion.core.state import AppState
@@ -86,6 +87,28 @@ def test_recovery_buttons(qtbot, tmp_path):
                on_delete_face=lambda: calls.append("delete") or True)
     d.delete_button.click()
     assert calls == ["delete"] and "deleted" in d.message.text()
+
+
+def test_start_at_login_is_off_until_chosen_and_saves_at_once(qtbot, tmp_path):
+    autostart = Autostart()
+    d = dialog(qtbot, tmp_path, autostart=autostart)
+    assert not d.start_at_login.isChecked() and not autostart.is_enabled()
+    d.start_at_login.setChecked(True)
+    assert d.save() is True
+    assert autostart.is_enabled() and d.message.text() == "Saved."
+    assert not (tmp_path / "settings.toml").exists()
+    d.start_at_login.setChecked(False)
+    assert d.save() is True and not autostart.is_enabled()
+
+
+def test_a_registry_failure_is_reported(qtbot, tmp_path):
+    class Refused(Autostart):
+        def enable(self):
+            raise PermissionError("access denied")
+
+    d = dialog(qtbot, tmp_path, autostart=Refused())
+    d.start_at_login.setChecked(True)
+    assert d.save() is False and "Not saved" in d.message.text()
 
 
 # ----- only while unlocked -------------------------------------------------------------------

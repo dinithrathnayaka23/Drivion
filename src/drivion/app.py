@@ -64,6 +64,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
                       help="delete all stored face data, then exit")
     parser.add_argument("--doctor", action="store_true",
                         help="check everything Drivion needs and show how to fix problems, then exit")
+    parser.add_argument("--self-test", action="store_true",
+                        help="load every model and library and run them on silence, then exit")
+    parser.add_argument("--autostart", choices=("on", "off", "status"),
+                        help="start Drivion when you sign in to Windows, or check whether it does")
     face.add_argument("--yes", action="store_true", help="don't ask for confirmation (with --delete-face)")
     parser.add_argument(
         "--list-voices", action="store_true",
@@ -85,7 +89,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load_config(args.config)
     except ConfigError as exc:
         # Logging isn't configured yet; stderr is the right channel here.
-        print(f"Drivion configuration error: {exc}", file=sys.stderr)
+        _report_fatal(f"Drivion configuration error: {exc}")
         return EXIT_CONFIG_ERROR
 
     log_file = configure_logging(config.general.log_level, paths.log_dir(), secrets.values())
@@ -96,6 +100,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         from drivion.doctor import print_report, run_checks
 
         return EXIT_OK if print_report(run_checks(config, secrets)) else EXIT_ERROR
+
+    if args.self_test:
+        from drivion.doctor import print_report, run_self_test
+
+        return EXIT_OK if print_report(run_self_test(config)) else EXIT_ERROR
+
+    if args.autostart:
+        return _set_autostart(args.autostart)
 
     if args.check_config:
         print("Configuration OK")
@@ -123,15 +135,42 @@ def main(argv: Sequence[str] | None = None) -> int:
                    env_path=args.env_file)
 
 
+def _report_fatal(message: str) -> None:
+    print(message, file=sys.stderr)
+    if sys.stderr is None:  # DrivionApp.exe has no console, so show it instead
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, message, "Drivion", 0x10)  # MB_ICONERROR
+
+
+def _set_autostart(choice: str) -> int:
+    from drivion.core.autostart import Autostart
+
+    autostart = Autostart()
+    if choice == "on":
+        autostart.enable()
+    elif choice == "off":
+        autostart.disable()
+    if not autostart.is_enabled():
+        print("Start at login: off")
+    elif autostart.is_current():
+        print("Start at login: on")
+    else:
+        print("Start at login: on, but it points to an old location. Run: drivion --autostart on")
+    return EXIT_OK
+
+
 def _settings_dialog(config: AppConfig, secrets, config_path: Path, env_path: Path):
     from PySide6.QtCore import QProcess
     from PySide6.QtWidgets import QMessageBox
 
+    from drivion.core.autostart import Autostart
     from drivion.ui.settings import SettingsDialog
 
     def re_enroll() -> None:
         # A separate process: the enrollment window has its own event loop.
-        QProcess.startDetached(sys.executable, ["-m", "drivion", "--enroll-face"])
+        program, *arguments = paths.launch_command("--enroll-face")
+        QProcess.startDetached(program, arguments)
 
     def delete_face() -> bool:
         answer = QMessageBox.question(None, "Delete face data",
@@ -139,7 +178,7 @@ def _settings_dialog(config: AppConfig, secrets, config_path: Path, env_path: Pa
         return answer == QMessageBox.StandardButton.Yes and _face_store().delete()
 
     return SettingsDialog(config, lambda name: secrets.key_for(name) is not None, config_path, env_path,
-                          on_re_enroll=re_enroll, on_delete_face=delete_face)
+                          on_re_enroll=re_enroll, on_delete_face=delete_face, autostart=Autostart())
 
 
 def _face_store():

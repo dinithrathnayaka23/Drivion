@@ -48,11 +48,14 @@ Drivion/
 ├── config/
 │   └── settings.example.toml copy to settings.toml (git-ignored)
 ├── docs/ARCHITECTURE.md
+├── packaging/                PyInstaller recipe and build script       [M12]
 ├── src/drivion/
 │   ├── app.py, __main__.py   entry point                              [M1]
+│   ├── doctor.py             --doctor and --self-test                  [M11, M12]
 │   ├── logging_setup.py      console + rotating file, secret redaction [M1]
 │   ├── config/               settings.py, secrets.py, paths.py         [M1]
-│   ├── core/                 state machine, lifecycle, single instance [M2]
+│   ├── core/                 state machine, lifecycle, single instance,
+│   │                         start at login                            [M2, M12]
 │   ├── ui/                   main window, tray, dashboard, settings    [M1→M3]
 │   ├── audio/                microphone capture, wake word             [M4]
 │   ├── speech/               speech-to-text, text-to-speech            [M5]
@@ -93,6 +96,18 @@ discarded, so a late "face OK" from a timed-out attempt can't unlock a newer one
 | Tray → Exit Drivion (**app exit**) | All services stop | Ends; "Wake up" no longer works | Unaffected |
 | "Lock Windows" (**Windows lock**) | Lock screen appears | Keeps running | Session locked; you need your Windows password/PIN |
 | "Put my computer to sleep" (**Windows sleep**) | The PC suspends after you confirm | Frozen along with everything else | Low-power state; the mic is off, so the wake word cannot wake the PC |
+
+### Packaging and start at login (M12)
+
+`packaging/drivion.spec` builds one PyInstaller folder with two programs that share
+`_internal`: `DrivionApp.exe` (no console) and `drivion.exe` (console, for commands). A
+one-folder build starts faster than one file, which matters at sign-in. `paths.FROZEN`
+moves `settings.toml` and `.env` to the data folder, because the program folder may not be
+writable and could be shared. `core/autostart.py` writes the per-user `Run` registry key.
+That replaced the original Task Scheduler plan: it needs no administrator rights, and users
+can see and disable it in Task Manager. It stays off until the user turns it on, and
+`DRIVION_AUTOSTART_KEY` keeps tests away from the real key. `drivion --self-test` runs every
+engine on silence and a blank picture, so a build can prove nothing was left out.
 
 ### Integration, settings and recovery (M11)
 
@@ -183,7 +198,7 @@ draws a static indicator instead.
 | 9 | Face verification ✅ | Consent-based enrollment, YuNet detection + SFace embeddings, encrypted local templates, threshold calibration |
 | 10 | Liveness ✅ | Random head-turn challenges, honest limits documented |
 | 11 | Integration ✅ | End-to-end flow, settings dialog, recovery procedures |
-| 12 | Packaging | PyInstaller build, startup at login (Task Scheduler), final README |
+| 12 | Packaging | ✅ PyInstaller build, startup at login (Run registry key), final README |
 
 ## 5. Dependency and compatibility decisions
 
@@ -202,7 +217,7 @@ draws a static indicator instead.
 | Volume | pycaw | Core Audio API |
 | Brightness | WMI (`WmiMonitorBrightnessMethods`) through a fixed PowerShell command | Works on laptop panels; external monitors are often unsupported |
 | Tests | pytest + pytest-qt | Qt widgets can be tested offscreen |
-| Packaging | PyInstaller (to evaluate against pyside6-deploy in M12) | |
+| Packaging | PyInstaller, one folder | Windows-only target; `drivion --self-test` checks each build |
 
 ## 6. Risks and hardware assumptions
 

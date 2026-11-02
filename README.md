@@ -3,7 +3,7 @@
 Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wakes on
 "Wake up, Drivion", verifies your face, and then accepts spoken commands.
 
-> **Status: Milestone 11 (integration and settings).** Drivion runs as a tray app with an
+> **Status: all 12 milestones are built.** Drivion runs as a tray app with an
 > animated dashboard. In standby it listens for a wake word, then **checks your face**
 > (local, encrypted templates) and asks for **random head turns** before opening the
 > dashboard. While active it understands
@@ -15,12 +15,48 @@ Drivion is a personal, voice-controlled AI desktop assistant for Windows. It wak
 > [docs/COMMANDS.md](docs/COMMANDS.md), [docs/ACTIONS.md](docs/ACTIONS.md) and
 > [docs/AI.md](docs/AI.md).
 
-## Requirements
+## Install
+
+There are two ways to run Drivion. Use the packaged build if you just want to use it, and
+the source setup if you want to change the code. See [Build it](#build-the-windows-package)
+to produce `dist\Drivion`, which is what you copy to a computer.
+
+### Packaged build
+
+You need Windows 10/11 and about 1 GB of disk space. You don't need Python.
+
+1. Copy the `Drivion` folder somewhere permanent, such as `C:\Apps\Drivion`. Keep every
+   file together: the programs need the `_internal` folder beside them.
+2. Open PowerShell in that folder, then download the models and enroll your face:
+   ```powershell
+   .\drivion.exe --download-models
+   .\drivion.exe --enroll-face
+   .\drivion.exe --self-test        # proves every engine works on this computer
+   ```
+3. Double-click **DrivionApp.exe**. A tray icon appears, and no window opens until you
+   wake Drivion.
+
+The folder has two programs that share everything in `_internal`:
+
+| Program | Use it for |
+|---|---|
+| `DrivionApp.exe` | Everyday use, with no console window. Start at login uses this one |
+| `drivion.exe` | Every command in this guide, such as `--doctor`, because it can print to PowerShell |
+
+In a packaged build, type `.\drivion.exe` wherever this guide says `drivion`, unless you
+add the folder to your PATH.
+
+The build isn't code-signed, so Windows SmartScreen may warn you the first time. Choose
+*More info → Run anyway* only for a build you made or trust.
+
+### From source
+
+Requirements:
 
 - Windows 10/11
 - Python **3.11** (check with `py -0p`; install it from python.org if `3.11` isn't listed)
 
-## Setup (PowerShell)
+In PowerShell:
 
 ```powershell
 cd "C:\Users\MSI GF63\Desktop\Pet projects\Drivion"
@@ -36,13 +72,22 @@ If `Activate.ps1` is blocked by the execution policy, run this once:
 `-e` installs Drivion in *editable* mode, so your code changes take effect without
 reinstalling.
 
-Then download the models once: the wake word (about 3.6 MB, each file checked against a
-pinned SHA-256 hash) and speech recognition (`base.en`, about 150 MB, from a pinned
-revision):
+### Model downloads
+
+Models aren't included in the build or in Git. Download them once per computer:
 
 ```powershell
 drivion --download-models
 ```
+
+| Model | Size | How it's checked |
+|---|---|---|
+| Wake word (openWakeWord) | about 3.6 MB | Pinned SHA-256 hash for each file |
+| Speech recognition (`base.en`) | about 150 MB | Pinned revision |
+| Face (YuNet and SFace) | about 40 MB | Pinned SHA-256 hash for each file |
+
+They go to `%LOCALAPPDATA%\Drivion\models` and work offline afterwards. A different
+`voice.stt_model` needs this command again.
 
 Then enroll your face. The window asks for your consent first, and stores encrypted
 templates, not photos. See [docs/FACE.md](docs/FACE.md).
@@ -65,6 +110,11 @@ drivion --test-face        # optional: live match score vs the threshold
 Copy-Item config\settings.example.toml config\settings.toml
 Copy-Item .env.example .env
 ```
+
+**In a packaged build these two files live in `%LOCALAPPDATA%\Drivion`**, not the program
+folder: `%LOCALAPPDATA%\Drivion\config\settings.toml` and `%LOCALAPPDATA%\Drivion\.env`.
+You usually don't need to create them, because the settings screen does that when you save.
+The folder includes `settings.example.toml` and `.env.example` for reference.
 
 Every setting is optional. Invalid values (for example `sensitivity = 1.5`) or unknown
 keys stop Drivion at startup with a message that names the bad setting.
@@ -123,6 +173,36 @@ blue = standby, amber = verifying, cyan = active, red = error.
 - Launching Drivion a second time doesn't start a second copy. It asks the running copy to
   open and exits with code 3.
 
+## Start at login
+
+Off by default. Turn it on with *Settings → Privacy → Start Drivion when I sign in to
+Windows*, or:
+
+```powershell
+drivion --autostart on       # also: off, status
+```
+
+Drivion then starts in standby when you sign in, and **listens for the wake word from
+then on**, with its tray icon showing. It doesn't unlock anything: face verification still
+runs when you wake it. The setting is stored for your Windows account only and needs no
+administrator rights. You can also turn it off in *Task Manager → Startup apps*.
+
+If you move the program folder, run `drivion --autostart on` again from the new place.
+
+## Build the Windows package
+
+```powershell
+pip install -e ".[build]"
+.\packaging\build.ps1
+dist\Drivion\drivion.exe --self-test
+```
+
+The build takes several minutes and makes `dist\Drivion` (about 550 MB). Your `.env`,
+settings, face data and models are never included, and the script stops if it finds any
+of those personal files in the output. `--self-test` runs every model and library on
+silence and a blank picture, without opening the microphone or camera, so it shows
+that nothing was left out of the build.
+
 ## Test
 
 ```powershell
@@ -152,9 +232,22 @@ Run `drivion --doctor` first. [docs/RECOVERY.md](docs/RECOVERY.md) covers re-enr
 face and recovering from errors.
 
 - **`py -3.11` not found:** install Python 3.11 from python.org.
-- **`drivion` is not recognized:** activate the venv first (`.\.venv\Scripts\Activate.ps1`).
+- **`drivion` is not recognized:** from source, activate the venv first
+  (`.\.venv\Scripts\Activate.ps1`). In a packaged build, open PowerShell in the program
+  folder and type `.\drivion.exe`.
+- **`--doctor` shows nothing when run with `DrivionApp.exe`:** that program has no console.
+  Use `drivion.exe` for commands.
+- **A missing DLL or module in the packaged build:** run `drivion.exe --self-test`. It names
+  what failed. Check that `_internal` is still beside the programs, then rebuild if needed.
+- **Windows or antivirus blocks a packaged program:** the build isn't code-signed. Check
+  that it's a build you trust, then allow it.
+- **Drivion doesn't start at login:** run `drivion --autostart status`, and check that it's
+  enabled in *Task Manager → Startup apps*. If you moved the folder, run
+  `drivion --autostart on` again.
+- **A settings error box appears at sign-in:** the message names the bad setting. Fix it in
+  `%LOCALAPPDATA%\Drivion\config\settings.toml`.
 - **"Drivion configuration error: ...":** fix the setting named in the message, or delete
-  `config/settings.toml` to go back to the defaults.
+  `settings.toml` to go back to the defaults.
 - **Nothing seems to happen when I run `drivion`:** that's standby. Look for the tray
   icon under the taskbar's `^` arrow.
 - **"Wake word unavailable":** run `drivion --download-models`. If it still appears,
@@ -185,7 +278,7 @@ face and recovering from errors.
 - **No spoken replies:** check `voice.tts_engine = "windows"`, the system volume, and
   `drivion --list-voices`.
 - **"Drivion is already running":** a copy is running in the tray. Use its *Exit Drivion*
-  menu item, or end `python.exe` in Task Manager.
+  menu item, or end `python.exe` or `DrivionApp.exe` in Task Manager.
 
 ## License
 

@@ -1,6 +1,7 @@
 import gc
 import logging
 import os
+import sys
 import uuid
 
 import pytest
@@ -23,7 +24,17 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("DRIVION_POWER_DRY_RUN", "1")
     # Never call a real AI provider from a test: no network, no quota spent.
     monkeypatch.setenv("DRIVION_LLM_OFFLINE", "1")
+    # Never change what really starts at login from a test.
+    autostart_key = f"Software\\DrivionTest-{uuid.uuid4().hex}"
+    monkeypatch.setenv("DRIVION_AUTOSTART_KEY", autostart_key)
     yield
+    if sys.platform == "win32":
+        import winreg
+
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, autostart_key)
+        except FileNotFoundError:
+            pass
     # Destroy this test's Qt objects here, on the main thread. Otherwise the
     # garbage collector may do it on a worker thread during a later test, which
     # corrupts Qt's state and crashes the process with an access violation.
