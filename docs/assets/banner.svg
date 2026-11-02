@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-label="Drivion: your voice, your face, your desktop">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a1428"/>
+      <stop offset="1" stop-color="#0f1e3a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#4fd8ff" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#4fd8ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="40%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#d9f6ff"/>
+      <stop offset="0.45" stop-color="#4fd8ff"/>
+      <stop offset="1" stop-color="#14508c"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1280" height="400" rx="24" fill="url(#sky)"/>
+  <rect x="1" y="1" width="1278" height="398" rx="23" fill="none" stroke="#1d3a66" stroke-width="2"/>
+
+  <g transform="translate(290 200)">
+    <circle r="190" fill="url(#glow)"/>
+    <circle r="150" fill="none" stroke="#4fd8ff" stroke-opacity="0.14" stroke-width="2"/>
+    <circle r="120" fill="none" stroke="#4fd8ff" stroke-opacity="0.26" stroke-width="2">
+      <animate attributeName="r" values="116;126;116" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="92" fill="none" stroke="#4fd8ff" stroke-opacity="0.5" stroke-width="3" stroke-dasharray="44 16">
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="24s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="62" fill="url(#core)"/>
+  </g>
+
+  <g font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+    <text x="520" y="186" font-size="84" font-weight="600" letter-spacing="16" fill="#4fd8ff">DRIVION</text>
+    <text x="524" y="238" font-size="28" fill="#cfe8ff">Your voice. Your face. Your desktop.</text>
+    <text x="524" y="280" font-size="20" fill="#6f8db3">A personal AI assistant for Windows that wakes, verifies, then listens.</text>
+  </g>
+</svg>
