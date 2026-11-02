@@ -16,6 +16,7 @@ import logging
 import signal
 import sys
 from collections.abc import Sequence
+from functools import lru_cache
 from pathlib import Path
 
 from drivion import __version__
@@ -428,7 +429,7 @@ def _register_wake_word(
     A missing model or engine is not fatal: Drivion still runs and can be
     opened from the tray.
     """
-    from drivion.audio.source import MicrophoneSource
+    from drivion.audio.source import FRAME_SAMPLES, MicrophoneSource
     from drivion.audio.wake_word import (
         DEFAULT_PHRASE,
         OpenWakeWordEngine,
@@ -440,6 +441,7 @@ def _register_wake_word(
     )
     from drivion.core.activity import Device
     from drivion.core.events import Event, EventType
+    from drivion.speech.stt import SpeechUnavailable
 
     settings = config.wake_word
     if not settings.enabled:
@@ -447,24 +449,54 @@ def _register_wake_word(
         return settings.phrase or DEFAULT_PHRASE, False, None
 
     try:
-        model_path, phrase = resolve_wake_word(settings.model, paths.models_dir(), settings.phrase)
-        engine = OpenWakeWordEngine(model_path, paths.models_dir())
-    except WakeWordUnavailable as exc:
+        if settings.engine == "whisper":
+            engine, frame_samples, phrase = _spoken_wake_engine(config)
+            threshold = 0.5  # that engine only ever scores 0 or 1
+            detail = f"speech model {config.voice.stt_model}"
+        else:
+            model_path, phrase = resolve_wake_word(settings.model, paths.models_dir(), settings.phrase)
+            engine, frame_samples = OpenWakeWordEngine(model_path, paths.models_dir()), FRAME_SAMPLES
+            threshold = sensitivity_to_threshold(settings.sensitivity)
+            detail = model_path.name
+    except (WakeWordUnavailable, SpeechUnavailable) as exc:
         log.warning("Wake word unavailable: %s", exc)
         return settings.phrase or DEFAULT_PHRASE, False, str(exc)
 
     service = WakeWordService(
-        source_factory=lambda: MicrophoneSource(settings.input_device),
+        source_factory=lambda: MicrophoneSource(settings.input_device, frame_samples),
         engine=engine,
-        detector=WakeWordDetector(sensitivity_to_threshold(settings.sensitivity), settings.cooldown_s),
+        detector=WakeWordDetector(threshold, settings.cooldown_s),
         on_detected=lambda score: controller.post_event(
             Event(EventType.WAKE_WORD_DETECTED, "wake word", f"score {score:.2f}")),
         on_microphone=lambda state: feed.set_device(Device.MICROPHONE, state),
         on_crash=controller.service_crashed,
     )
     standby_services.register(service)
-    log.info("Wake word ready: %r (%s)", phrase, model_path.name)
+    log.info("Wake word ready: %r (%s)", phrase, detail)
     return phrase, True, None
+
+
+def _spoken_wake_engine(config: AppConfig):
+    """Wake on the phrase with the speech recognizer. Returns (engine, frame size, phrase)."""
+    from drivion.audio.spoken_wake import SpokenWakeEngine
+    from drivion.audio.wake_word import DEFAULT_PHRASE, sensitivity_to_threshold
+    from drivion.speech.stt import check_whisper_model
+    from drivion.speech.vad import VAD_FRAME_SAMPLES, SileroVad
+
+    voice = config.voice
+    model_dir = check_whisper_model(paths.models_dir(), voice.stt_model)
+    engine = SpokenWakeEngine(SileroVad, lambda: _shared_transcriber(model_dir, voice.stt_threads),
+                              speech_threshold=sensitivity_to_threshold(config.wake_word.sensitivity))
+    return engine, VAD_FRAME_SAMPLES, config.wake_word.phrase or DEFAULT_PHRASE
+
+
+@lru_cache(maxsize=1)
+def _shared_transcriber(model_dir: Path, threads: int):
+    """One copy of the speech model for the wake phrase and commands. They never
+    run together, because each service only runs in its own state."""
+    from drivion.speech.stt import WhisperTranscriber
+
+    return WhisperTranscriber(model_dir, threads)
 
 
 TIMEOUT_REPLY = "I didn't hear a command, so I'm going back to standby."
@@ -630,7 +662,7 @@ def _register_speech(
     from drivion.core.events import Event, EventType
     from drivion.speech.listener import CommandListenerService
     from drivion.speech.recorder import RecorderSettings
-    from drivion.speech.stt import SpeechUnavailable, WhisperTranscriber, check_whisper_model
+    from drivion.speech.stt import SpeechUnavailable, check_whisper_model
     from drivion.speech.vad import VAD_FRAME_SAMPLES, SileroVad
 
     voice = config.voice
@@ -651,7 +683,7 @@ def _register_speech(
         source_factory=lambda: MicrophoneSource(config.wake_word.input_device, VAD_FRAME_SAMPLES),
         vad_factory=SileroVad,
         # Loaded in the listener thread on first activation, then kept.
-        transcriber_factory=lambda: WhisperTranscriber(model_dir, voice.stt_threads),
+        transcriber_factory=lambda: _shared_transcriber(model_dir, voice.stt_threads),
         speaker=speaker,
         recorder_settings=RecorderSettings(
             speech_threshold=voice.speech_threshold,

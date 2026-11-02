@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from drivion.audio.models import BUILTIN_WAKE_WORDS, EMBEDDING, MELSPECTROGRAM, is_valid
+from drivion.audio.wake_word import DEFAULT_PHRASE
 from drivion.config import AppConfig, paths
 from drivion.core.autostart import Autostart
 from drivion.speech.stt import SpeechUnavailable, check_whisper_model
@@ -47,6 +48,12 @@ def _wake_word(config: AppConfig, models: Path) -> Check:
     settings = config.wake_word
     if not settings.enabled:
         return Check("Wake word", Status.WARN, "turned off in settings", "Open Drivion from the tray")
+    if settings.engine == "whisper":
+        try:
+            check_whisper_model(models, config.voice.stt_model)
+        except SpeechUnavailable:
+            return Check("Wake word", Status.FAIL, f"speech model {config.voice.stt_model} missing", DOWNLOAD)
+        return Check("Wake word", Status.OK, f"{settings.phrase or DEFAULT_PHRASE!r} (speech model)")
     needed = [MELSPECTROGRAM, EMBEDDING]
     if settings.model in BUILTIN_WAKE_WORDS:
         needed.append(BUILTIN_WAKE_WORDS[settings.model][0])
@@ -155,8 +162,17 @@ def run_checks(config: AppConfig, secrets, *, hardware: bool = True,
 
 
 def _try_wake_word(config: AppConfig, models: Path) -> str:
+    from drivion.audio.spoken_wake import SpokenWakeEngine
     from drivion.audio.wake_word import OpenWakeWordEngine, resolve_wake_word
+    from drivion.speech.stt import WhisperTranscriber
+    from drivion.speech.vad import VAD_FRAME_SAMPLES, SileroVad
 
+    if config.wake_word.engine == "whisper":
+        model = check_whisper_model(models, config.voice.stt_model)
+        engine = SpokenWakeEngine(SileroVad, lambda: WhisperTranscriber(model, config.voice.stt_threads))
+        engine.reset()
+        engine.process(np.zeros(VAD_FRAME_SAMPLES, dtype=np.int16))
+        return f"{config.wake_word.phrase or DEFAULT_PHRASE!r} engine ran"
     model_path, phrase = resolve_wake_word(config.wake_word.model, models, config.wake_word.phrase)
     OpenWakeWordEngine(model_path, models).process(np.zeros(1_280, dtype=np.int16))
     return f"{phrase!r} model ran"

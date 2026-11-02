@@ -45,8 +45,10 @@ class UISettings(_Section):
 
 class WakeWordSettings(_Section):
     enabled: bool = True
-    engine: Literal["openwakeword"] = "openwakeword"
-    # A built-in model name ("hey_jarvis") or the path to a custom .onnx model.
+    # "whisper" wakes on "Hey Drivion" with the speech model, without training.
+    # "openwakeword" uses `model` below and needs less CPU while you talk.
+    engine: Literal["whisper", "openwakeword"] = "whisper"
+    # For openwakeword: a built-in model name or the path to a custom .onnx model.
     model: str = Field(default="hey_jarvis", min_length=1)
     # Phrase shown in the dashboard; defaults to the built-in model's phrase.
     phrase: str | None = None

@@ -53,7 +53,7 @@ _ACTIVE_VOICE_TEXT = {
 
 
 def listening_text(state: AppState, microphone: DeviceState,
-                   wake_phrase: str = "Wake up, Drivion",
+                   wake_phrase: str = "Hey Drivion",
                    voice: VoiceStatus = VoiceStatus.IDLE) -> str:
     """Describe honestly what Drivion is listening for right now."""
     if state is AppState.ACTIVE and voice is VoiceStatus.LOADING:
@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
     close_requested = Signal()  # user pressed X; the shell decides what that means
 
     def __init__(self, history_limit: int = 50, animated: bool = True,
-                 wake_phrase: str = "Wake up, Drivion") -> None:
+                 wake_phrase: str = "Hey Drivion") -> None:
         super().__init__()
         self._allow_close = False
         self._state = AppState.STANDBY

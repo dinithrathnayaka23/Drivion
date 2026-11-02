@@ -39,7 +39,7 @@ from drivion.core.services import CrashHandler, ThreadedService
 
 log = logging.getLogger(__name__)
 
-DEFAULT_PHRASE = "Wake up, Drivion"
+DEFAULT_PHRASE = "Hey Drivion"
 
 
 class WakeWordUnavailable(Exception):

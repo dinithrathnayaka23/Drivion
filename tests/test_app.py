@@ -111,7 +111,7 @@ def test_missing_models_disable_listener_but_not_the_app(qapp):
     assert listening is False
     assert "drivion --download-models" in problem
     assert standby.services == []
-    assert phrase == "Wake up, Drivion"
+    assert phrase == "Hey Drivion"
 
 
 def test_disabled_wake_word_is_quiet(qapp):
