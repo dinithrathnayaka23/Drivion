@@ -54,6 +54,8 @@ Drivion can't unlock until you enroll again.
 
 ## Settings problems
 
+In a packaged build, the paths below are inside `%LOCALAPPDATA%\Drivion`.
+
 - **"Drivion configuration error" at startup:** the message names the bad setting. Fix it
   in `config/settings.toml`.
 - **Going back to your previous settings:** the settings screen keeps a copy, so run:
@@ -76,13 +78,25 @@ Simple commands keep working without AI. See [AI.md](AI.md).
 
 ## Starting completely fresh
 
-This removes models, logs and face data, but not your settings or `.env`:
+From source, this removes models, logs and face data, but not your settings or `.env`.
+**In a packaged build it removes those too**, including your API keys, because they're in
+the same folder. Copy them somewhere safe first if you want to keep them.
 
 ```powershell
 Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Drivion"
 drivion --download-models
 drivion --enroll-face
 ```
+
+## Removing Drivion
+
+```powershell
+drivion --autostart off
+drivion --delete-face
+```
+
+Then choose *Exit Drivion* in the tray, delete the program folder, and delete
+`%LOCALAPPDATA%\Drivion`.
 
 ## Getting logs
 
